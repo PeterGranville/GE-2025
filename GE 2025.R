@@ -4,6 +4,7 @@
 library(readxl)
 library(scales)
 library(plotly)
+library(writexl)
 library(stringr)
 library(zipcodeR)
 library(geosphere)
@@ -710,6 +711,7 @@ ge <- read_excel(
   `cred_lvl`, 
   `passfail_2019`, 
   `mdearnp3`,
+  `mediandebt`,
   `count_AY1617`
 ) %>% filter(
   (`control_peps` %in% c(
@@ -753,6 +755,13 @@ rm(ge.level.category)
 #### Import information on online programs ####
 
 ge <- left_join(x=ge, y=online.programs, by=c("opeid6", "cip4", "cred_lvl"))
+
+# If not sure, say it's not an online program: 
+ge <- ge %>% mutate(`Distance status` = ifelse(
+  is.na(`Distance status`), 
+  "Not an online program", 
+  `Distance status`
+))
 
 #### End #### 
 
@@ -935,14 +944,32 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
   # Apply fullDebtData to passing programs  
   if(fullDebtData==TRUE){
     passingPrograms <- passingPrograms %>% filter(
-      is.na(`debtservicenpp_md`)==FALSE
+      is.na(`mediandebt`)==FALSE
     )
   }
   
-  # Failing programs are all those not passing 
+  #### End #### 
+  
+  #### Define failing programs #### 
+  
   failingPrograms <- gedata %>% filter(
     (`Prog ID` %in% passingPrograms$`Prog ID`)==FALSE
   )
+  if((lepSelection=="Y") & (geSelection=="Y")){
+    failingPrograms <- failingPrograms %>% filter(
+      (`passfailLEP`=="Fail LEP") | (`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only"))
+    )
+  }
+  if((lepSelection=="Y") & (geSelection=="N")){
+    failingPrograms <- failingPrograms %>% filter(
+      `passfailLEP`=="Fail LEP"
+    )
+  }
+  if((lepSelection=="N") & (geSelection=="Y")){
+    failingPrograms <- failingPrograms %>% filter(
+      `passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")
+    )
+  }
   
   failingPrograms <- failingPrograms %>% mutate(
     `Distance to nearest alternative` = rep(NA)
@@ -965,7 +992,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
   
   for(i in (1:nrow(failingPrograms))){
     
-    print("Trying number ", i, " of ", nrow(failingPrograms), " failing programs in ", runName, " at ", Sys.time(), ".", sep="")
+    print(paste("Trying number ", i, " of ", nrow(failingPrograms), " failing programs in ", runName, " at ", Sys.time(), ".", sep=""))
     
     #### Create alternativePrograms, filter by state #### 
     
@@ -1129,7 +1156,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
       for(j in (1:nrow(alternativePrograms))){
         
         # Set both programs are online, set distance to 0 
-        if((failingPrograms$`Distance status`[i]) & (alternativePrograms$`Distance status`[j])){
+        if((failingPrograms$`Distance status`[i]=="Online program") & (alternativePrograms$`Distance status`[j]=="Online program")){
           alternativePrograms$`Distance`[j] <- 0
           
         # Otherwise, calculate ZIP distance 
@@ -1154,19 +1181,19 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
         min(alternativePrograms$`Distance`, na.rm=TRUE)
       )
       
-      failingPrograms$`alt_schname` <- alternativePrograms$`schname`[1]
-      failingPrograms$`alt_cred_lvl` <- alternativePrograms$`cred_lvl`[1]
-      failingPrograms$`alt_cip4` <- alternativePrograms$`cip4`[1]
-      failingPrograms$`alt_zip` <- alternativePrograms$`zip`[1]
-      failingPrograms$`alt_opeid6` <- alternativePrograms$`opeid6`[1]
+      failingPrograms$`alt_schname`[i] <- alternativePrograms$`schname`[1]
+      failingPrograms$`alt_cred_lvl`[i] <- alternativePrograms$`cred_lvl`[1]
+      failingPrograms$`alt_cip4`[i] <- alternativePrograms$`cip4`[1]
+      failingPrograms$`alt_zip`[i] <- alternativePrograms$`zip`[1]
+      failingPrograms$`alt_opeid6`[i] <- alternativePrograms$`opeid6`[1]
       
     }else{
       failingPrograms$`Distance to nearest alternative`[i] <- NA
-      failingPrograms$`alt_schname` <- NA
-      failingPrograms$`alt_cred_lvl` <- NA
-      failingPrograms$`alt_cip4` <- NA
-      failingPrograms$`alt_zip` <- NA
-      failingPrograms$`alt_opeid6` <- NA
+      failingPrograms$`alt_schname`[i] <- NA
+      failingPrograms$`alt_cred_lvl`[i] <- NA
+      failingPrograms$`alt_cip4`[i] <- NA
+      failingPrograms$`alt_zip`[i] <- NA
+      failingPrograms$`alt_opeid6`[i] <- NA
     }
     
     #### End #### 
@@ -1182,7 +1209,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
     #### End #### 
 
   }
-  return(failingPrograms)
+  return(list(failingPrograms, passingPrograms))
 }
 
 #### Run distance function: Full data only ####
@@ -1259,10 +1286,137 @@ ge.NYL4.NL <- calc_dist(
 
 #### End #### 
 
-# Make calculations (this will take a long time to run)
-ge.fail.A <- calc_dist(ge.pass, ge.fail, "Same credential level", "Same 4-digit CIP")
-ge.fail.B <- calc_dist(ge.pass, ge.fail, "Same credential level", "Same 2-digit CIP")
-ge.fail.D <- calc_dist(ge.pass, ge.fail, "Same credential category", "Same 4-digit CIP")
+#### Save files for future #### 
+
+write_xlsx(ge.YYL4.FDO, "ge-YYL4-FDO.xlsx")
+write_xlsx(ge.YNL4.FDO, "ge-YNL4-FDO.xlsx")
+write_xlsx(ge.NYL4.FDO, "ge-NYL4-FDO.xlsx")
+write_xlsx(ge.YYL4.NL, "ge-YYL4-NL.xlsx")
+write_xlsx(ge.YNL4.NL, "ge-YNL4-NL.xlsx")
+write_xlsx(ge.NYL4.NL, "ge-NYL4-NL.xlsx")
+
+#### End #### 
+
+#### Re-load files ####
+
+ge.YYL4.FDO <- list(
+  failingPrograms = read_excel(path="ge-YYL4-FDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YYL4-FDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.YNL4.FDO <- list(
+  failingPrograms = read_excel(path="ge-YNL4-FDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YNL4-FDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.NYL4.FDO <- list(
+  failingPrograms = read_excel(path="ge-NYL4-FDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-NYL4-FDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.YYL4.NL <- list(
+  failingPrograms = read_excel(path="ge-YYL4-NL.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YYL4-NL.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.YNL4.NL <- list(
+  failingPrograms = read_excel(path="ge-YNL4-NL.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YNL4-NL.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.NYL4.NL <- list(
+  failingPrograms = read_excel(path="ge-NYL4-NL.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-NYL4-NL.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+#### End #### 
+
+analyzeSimulation <- function(
+    geFull,
+    simulationData,
+    disaggregateLever1, 
+    disaggregateVar1,
+    disaggregateLever2, 
+    disaggregateVar2
+){
+  
+  #For testing
+  geFull <- ge 
+  simulationData <- ge.YYL4.FDO 
+  geFailing <- simulationData[[1]]
+  gePassing <- simulationData[[2]]
+  
+  # Total failing programs (loss of T-IV aid)
+  V1 <- nrow(geFailing)
+  
+  # Total passing programs (keeps T-IV aid)
+  V2 <- nrow(gePassing)
+  
+  # Total programs with insufficient data (keeps T-IV aid by default or gets combined with other programs)
+  V3 <- nrow(geFull) - (nrow(geFailing) + nrow(gePassing))
+  
+  # Share of students in failing programs
+  V4 <- nrow(geFailing) / nrow(geFull)
+  
+  # Share of students in passing programs
+  V5 <- nrow(gePassing) / nrow(geFull)
+  
+  # Share of students in programs with insufficient data
+  V6 <- (nrow(geFull) - (nrow(geFailing) + nrow(gePassing))) / nrow(geFull)
+  
+  # Share of students with no alternative program within 30 miles
+  geFailing <- geFailing %>% mutate(
+    `No option within less than 30 miles` = ifelse(
+      (`Distance to nearest alternative` > 30) | (is.na(`Distance to nearest alternative`)) | (is.infinite(`Distance to nearest alternative`)),
+      1, 
+      0
+    )
+  )
+  V7 <- sum(geFailing$`No option within less than 30 miles`) / nrow(geFailing)
+  
+  # Average distance in miles to nearest alternative program (<30 miles)
+  geFailing <- geFailing %>% mutate(
+    `Distance (within 30 miles)` = ifelse(
+      `No option within less than 30 miles`==1, 
+      NA, 
+      `Distance to nearest alternative`
+    )
+  )
+  V8 <- mean(geFailing$`Distance (within 30 miles)`, na.rm=TRUE)
+  
+  # Average earnings 3 years after completion, pre-transfer: All Title IV recipients
+  averageEarnings1 <- 
+  
+  # Average earnings 3 years after completion, post-transfer: All Title IV recipients
+  # Absolute ($) increase in earnings: All Title IV students
+  # Relative (%) increase in earnings: All Title IV students
+  # Average earnings 3 years after completion, pre-transfer: Title IV recipients at failing programs
+  # Average earnings 3 years after completion, post-transfer: Title IV recipients at failing programs
+  # Absolute ($) increase in earnings: Title IV recipients at failing programs
+  # Relative (%) increase in earnings: Title IV recipients at failing programs
+  
+  
+  
+  #### Say how many failing programs had no alternative ####
+  
+  #### End #### 
+  
+  #### Say how many programs have no earnings data ####
+  
+  #### End #### 
+  
+  #### Create transferStudents #### 
+  
+  #### End #### 
+  
+  #### Calculate typical earnings pre- and post-transfer ####
+  
+  #### End #### 
+  
+  
+}
+
+
 
 # Add in the determinations on online programs 
 ge.fail.A <- left_join(x=ge.fail.A, y=online.programs, by=c("opeid6", "cip4", "cred_lvl"))
