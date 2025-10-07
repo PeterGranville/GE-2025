@@ -666,8 +666,8 @@ online.programs <- online.programs %>% pivot_wider(
 ) %>% mutate(
   `Distance status` = ifelse(
     `Distance share` >= 0.5, 
-    1, 
-    0
+    "Online program", 
+    "Not an online program"
   )
 ) 
 
@@ -684,130 +684,6 @@ online.programs <- online.programs %>% select(
   `opeid6` = `OPEID6`, 
   `cip4` = `CIP4`
 )
-
-#### End #### 
-
-#### Joining with GE data ####
-
-importGE <- read_excel(
-  path="nprm-2022ppd-public-suppressed.xlsx", 
-  col_names=TRUE
-) %>% select(
-  `opeid6`, 
-  `cip4`, 
-  `cred_lvl`, 
-  `passfail_2019`, 
-  `inGE`
-)
-online.programs <- left_join(x=online.programs, y=importGE, by=c("opeid6", "cip4", "cred_lvl"))
-rm(importGE)
-
-#### End #### 
-
-#### Adding some variations on the variables ####
-
-online.programs <- online.programs %>% mutate(
-  `cip4` = as.character(cip4)
-) %>% mutate(
-  `cip4` = ifelse(
-    nchar(`cip4`)==1, 
-    paste("0", `cip4`, sep=""), 
-    `cip4`
-  )
-) %>% mutate(
-  `cip4` = ifelse(
-    nchar(`cip4`)==2, 
-    paste("0", `cip4`, sep=""), 
-    `cip4`
-  )
-) %>% mutate(
-  `cip4` = ifelse(
-    nchar(`cip4`)==3, 
-    paste("0", `cip4`, sep=""), 
-    `cip4`
-  )
-) %>% mutate(
-  `cip2` = as.numeric(substr(`cip4`, 1, 2)), 
-  `cip4` = as.numeric(`cip4`)
-)
-
-joiner3 <- data.frame("cred_lvl" = c(
-  "UG Certificates",
-  "Associate's",
-  "Bachelor's", 
-  "Post-BA Certs", 
-  "Grad Certs",
-  "Master's", 
-  "Doctoral",
-  "Professional"
-), "cred_cat"=c(
-  "Undergraduate", 
-  "Undergraduate", 
-  "Undergraduate", 
-  "Undergraduate", 
-  "Graduate", 
-  "Graduate", 
-  "Graduate", 
-  "Graduate"
-))
-online.programs <- left_join(x=online.programs, y=joiner3, by="cred_lvl")
-rm(joiner3)
-
-#### End #### 
-
-# Move this down later: 
-
-#### Determining when online programs have another online option ####
-
-# online.programs <- online.programs %>% mutate(
-#   `Online alternative A` = rep(NA), 
-#   `Online alternative B` = rep(NA),
-#   `Online alternative D` = rep(NA)
-# )
-# 
-# for(i in (1:nrow(online.programs))){
-#   
-#   if(online.programs$`Distance status`[i]==1){
-#     online.alternatives <- online.programs %>% filter(
-#       `Distance status`==1,
-#       (`inGE`==0) | (`passfail2019`),
-#       `opeid6` != online.programs$`opeid6`[i]
-#     )
-#     
-#     online.alternatives.A <- online.alternatives %>% filter(
-#       `cip4` == online.programs$`cip4`[i], 
-#       `cred_lvl` == online.programs$`cred_lvl`[i]
-#     )
-#     online.alternatives.B <- online.alternatives %>% filter(
-#       `cip2` == online.programs$`cip2`[i], 
-#       `cred_lvl` == online.programs$`cred_lvl`[i]
-#     )
-#     online.alternatives.D <- online.alternatives %>% filter(
-#       `cip4` == online.programs$`cip4`[i], 
-#       `cred_cat` == online.programs$`cred_cat`[i]
-#     )
-#     
-#     if(nrow(online.alternatives.A) > 0){
-#       online.programs$`Online alternative A`[i] <- "Online with an online alternative"
-#     }else{
-#       online.programs$`Online alternative A`[i] <- "Online without an online alternative"
-#     }
-#     
-#     if(nrow(online.alternatives.B) > 0){
-#       online.programs$`Online alternative B`[i] <- "Online with an online alternative"
-#     }else{
-#       online.programs$`Online alternative B`[i] <- "Online without an online alternative"
-#     }
-#     if(nrow(online.alternatives.D) > 0){
-#       online.programs$`Online alternative D`[i] <- "Online with an online alternative"
-#     }else{
-#       online.programs$`Online alternative D`[i] <- "Online without an online alternative"}
-#     
-#     rm("online.alternatives.A", "online.alternatives.B", "online.alternatives.D")
-#   }
-# }
-# 
-# online.programs <- online.programs %>% select(-(`cred_cat`)) %>% select(-(`cip2`))
 
 #### End #### 
 
@@ -839,9 +715,9 @@ ge <- read_excel(
   (`control_peps` %in% c(
     "Foreign For-Profit", 
     "Foreign Private")
-  )==FALSE
-)
-
+  )==FALSE, 
+  (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
+) 
 ge.level.category <- data.frame(
   "cred_lvl" = c(
     "UG Certificates", 
@@ -871,6 +747,12 @@ ge <- left_join(
   `zip` = substr(`zip`, 1, 5)
 )
 rm(ge.level.category)
+
+#### End #### 
+
+#### Import information on online programs ####
+
+ge <- left_join(x=ge, y=online.programs, by=c("opeid6", "cip4", "cred_lvl"))
 
 #### End #### 
 
@@ -969,224 +851,413 @@ ge <- ge %>% mutate(
     1,
     0
   ), 
-  `LEP threshold desc` = ifelse(
+  `LEP threshold` = ifelse(
     `Category`=="Undergraduate", 
     
     # Undergraduate logic
-    ifelse()
+    ifelse(
+      `Classification`=="Majority in-state",
+      `Median earnings (high school, same state)`,
+      `Median earnings (high school, nationwide)`
+    ),
     
     # Graduate logic 
+    ifelse(
+      `Classification`=="Majority in-state",
+      pmin(
+        `Median earnings (bachelor's, same state, all CIPs)`, 
+        `Median earnings (bachelor's, same state, same CIP)`, 
+        `Median earnings (bachelor's, nationwide, same CIP)`, 
+        na.rm=TRUE
+      ),
+      pmin(
+        `Median earnings (bachelor's, nationwide, all CIPs)`, 
+        `Median earnings (bachelor's, nationwide, same CIP)`, 
+        na.rm=TRUE
+      )
+    )
   )
-) 
+) %>% mutate(
+  `passfailLEP` = ifelse(
+    is.na(`mdearnp3`),
+    "No LEP data", 
+    ifelse(
+      `mdearnp3` >= `LEP threshold`, 
+      "Pass LEP", 
+      "Fail LEP"
+    )
+  )
+)
 
 #### End #### 
 
-#### Create ge.fail and ge.pass #### 
+#### Make unique IDs ####
 
-ge.fail <- ge %>% filter(
-  `passfail_2019` %in% c(
-    "Fail both DTE and EP", 
-    "Fail DTE only", 
-    "Fail EP only"
-  )
-) %>% filter(
-  `inGE`==1
-)
-ge.pass <- ge %>% filter(
-  `passfail_2019` %in% c(
-    "Pass", 
-    "No DTE/EP data"
+ge <- ge %>% mutate(
+  `Prog ID` = paste(
+    `opeid6`, 
+    `cip4`, 
+    `cred_lvl`, 
+    sep="..."
   )
 )
 
 #### End #### 
 
-#### ZIP distance function #### 
-
-calc_dist <- function(gepassdata, gefaildata, levelSelection, cipSelection){
+calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSelection, fullEarningsData, fullDebtData, runName){
   
-  gefaildata <- gefaildata %>% mutate(
+  #### Create failingPrograms and passingPrograms #### 
+  
+  # Start with all programs passing. 
+  passingPrograms <- gedata 
+  
+  # Apply LEP if in place 
+  if(lepSelection=="Y"){
+    passingPrograms <- passingPrograms %>% filter(
+      (`inLEP`==0) | (`passfailLEP` %in% c("No LEP data", "Pass LEP"))
+    )
+  }
+  
+  # Apply GE if in place 
+  if(geSelection=="Y"){
+    passingPrograms <- passingPrograms %>% filter(
+      (`inGE`==0) | (`passfail_2019` %in% c("No DTE/EP data", "Pass"))
+    )
+  }
+  
+  # Apply fullEarningsData to passing programs  
+  if(fullEarningsData==TRUE){
+    passingPrograms <- passingPrograms %>% filter(
+      is.na(`mdearnp3`)==FALSE
+    )
+  }
+  
+  # Apply fullDebtData to passing programs  
+  if(fullDebtData==TRUE){
+    passingPrograms <- passingPrograms %>% filter(
+      is.na(`debtservicenpp_md`)==FALSE
+    )
+  }
+  
+  # Failing programs are all those not passing 
+  failingPrograms <- gedata %>% filter(
+    (`Prog ID` %in% passingPrograms$`Prog ID`)==FALSE
+  )
+  
+  failingPrograms <- failingPrograms %>% mutate(
     `Distance to nearest alternative` = rep(NA)
   )
   
-  for(i in (1:nrow(gefaildata))){
+  #### End #### 
+  
+  #### Empty variables for recording the alternative ####
+  
+  failingPrograms <- failingPrograms %>% mutate(
+    `Distance to nearest alternative` = rep(NA), 
+    `alt_schname` = rep(NA),
+    `alt_cred_lvl` = rep(NA), 
+    `alt_cip4` = rep(NA),
+    `alt_zip` = rep(NA), 
+    `alt_opeid6` = rep(NA)
+  )
+  
+  #### End #### 
+  
+  for(i in (1:nrow(failingPrograms))){
     
-    print(i)
+    print("Trying number ", i, " of ", nrow(failingPrograms), " failing programs in ", runName, " at ", Sys.time(), ".", sep="")
     
-    gealternatives <- gepassdata
+    #### Create alternativePrograms, filter by state #### 
     
-    if(gefaildata$`stabbr`[i]=="AL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AL", "MS", "TN", "GA", "FL"))}
+    alternativePrograms <- passingPrograms %>% mutate(`Distance` = rep(NA))
     
-    if(gefaildata$`stabbr`[i]=="AK"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AK"))}
+    if(failingPrograms$`stabbr`[i]=="AL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AL", "MS", "TN", "GA", "FL"))}
     
-    if(gefaildata$`stabbr`[i]=="AZ"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AZ", "CA", "NV", "UT", "CO", "NM"))}
+    if(failingPrograms$`stabbr`[i]=="AK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AK"))}
     
-    if(gefaildata$`stabbr`[i]=="AR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AR", "MO", "TN", "MS", "LA", "TX", "OK"))}
+    if(failingPrograms$`stabbr`[i]=="AZ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AZ", "CA", "NV", "UT", "CO", "NM"))}
     
-    if(gefaildata$`stabbr`[i]=="CA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CA", "AZ", "NV", "OR"))}
+    if(failingPrograms$`stabbr`[i]=="AR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AR", "MO", "TN", "MS", "LA", "TX", "OK"))}
     
-    if(gefaildata$`stabbr`[i]=="CO"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CO", "WY", "NE", "KS", "OK", "NM", "AZ", "UT"))}
+    if(failingPrograms$`stabbr`[i]=="CA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CA", "AZ", "NV", "OR"))}
     
-    if(gefaildata$`stabbr`[i]=="CT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CT", "RI", "MA", "NY", "NJ"))}
+    if(failingPrograms$`stabbr`[i]=="CO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CO", "WY", "NE", "KS", "OK", "NM", "AZ", "UT"))}
     
-    if(gefaildata$`stabbr`[i]=="DE"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("DE", "NJ", "MD", "PA"))}
+    if(failingPrograms$`stabbr`[i]=="CT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CT", "RI", "MA", "NY", "NJ"))}
     
-    if(gefaildata$`stabbr`[i]=="DC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("DC", "MD", "VA"))}
+    if(failingPrograms$`stabbr`[i]=="DE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DE", "NJ", "MD", "PA"))}
     
-    if(gefaildata$`stabbr`[i]=="FL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("FL", "GA", "MS", "AL"))}
+    if(failingPrograms$`stabbr`[i]=="DC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DC", "MD", "VA"))}
     
-    if(gefaildata$`stabbr`[i]=="GA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("GA", "FL", "AL", "TN", "SC", "NC"))}
+    if(failingPrograms$`stabbr`[i]=="FL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("FL", "GA", "MS", "AL"))}
     
-    if(gefaildata$`stabbr`[i]=="HI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("HI"))}
+    if(failingPrograms$`stabbr`[i]=="GA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GA", "FL", "AL", "TN", "SC", "NC"))}
     
-    if(gefaildata$`stabbr`[i]=="ID"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ID", "WA", "OR", "NV", "UT", "WY", "MT"))}
+    if(failingPrograms$`stabbr`[i]=="HI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("HI"))}
     
-    if(gefaildata$`stabbr`[i]=="IL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IL", "WI", "IA", "MO", "KY", "IN", "MI", "TN"))}
+    if(failingPrograms$`stabbr`[i]=="ID"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ID", "WA", "OR", "NV", "UT", "WY", "MT"))}
     
-    if(gefaildata$`stabbr`[i]=="IN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IN", "MI", "OH", "KY", "IL", "WI"))}
+    if(failingPrograms$`stabbr`[i]=="IL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IL", "WI", "IA", "MO", "KY", "IN", "MI", "TN"))}
     
-    if(gefaildata$`stabbr`[i]=="IA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IA", "SD", "NE", "MO", "KS", "IL", "WI", "MN"))}
+    if(failingPrograms$`stabbr`[i]=="IN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IN", "MI", "OH", "KY", "IL", "WI"))}
     
-    if(gefaildata$`stabbr`[i]=="KS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("KS", "NE", "CO", "OK", "MO", "IA"))}
+    if(failingPrograms$`stabbr`[i]=="IA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IA", "SD", "NE", "MO", "KS", "IL", "WI", "MN"))}
     
-    if(gefaildata$`stabbr`[i]=="KY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("KY", "IL", "IN", "OH", "WV", "VA", "TN", "MO"))}
+    if(failingPrograms$`stabbr`[i]=="KS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KS", "NE", "CO", "OK", "MO", "IA"))}
     
-    if(gefaildata$`stabbr`[i]=="LA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("LA", "MS", "AR", "TX"))}
+    if(failingPrograms$`stabbr`[i]=="KY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KY", "IL", "IN", "OH", "WV", "VA", "TN", "MO"))}
     
-    if(gefaildata$`stabbr`[i]=="ME"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ME", "NH", "MA", "VT"))}
+    if(failingPrograms$`stabbr`[i]=="LA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("LA", "MS", "AR", "TX"))}
     
-    if(gefaildata$`stabbr`[i]=="MD"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MD", "DC", "VA", "WV", "PA", "DE", "NJ"))}
+    if(failingPrograms$`stabbr`[i]=="ME"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ME", "NH", "MA", "VT"))}
     
-    if(gefaildata$`stabbr`[i]=="MA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MA", "ME", "NH", "VT", "NY", "CT", "RI"))}
+    if(failingPrograms$`stabbr`[i]=="MD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MD", "DC", "VA", "WV", "PA", "DE", "NJ"))}
     
-    if(gefaildata$`stabbr`[i]=="MI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MI", "WI", "IL", "IN", "OH"))}
+    if(failingPrograms$`stabbr`[i]=="MA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MA", "ME", "NH", "VT", "NY", "CT", "RI"))}
     
-    if(gefaildata$`stabbr`[i]=="MN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MN", "ND", "SD", "IA", "WI"))}
+    if(failingPrograms$`stabbr`[i]=="MI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MI", "WI", "IL", "IN", "OH"))}
     
-    if(gefaildata$`stabbr`[i]=="MS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MS", "AL", "TN", "FL", "AR", "LA"))}
+    if(failingPrograms$`stabbr`[i]=="MN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MN", "ND", "SD", "IA", "WI"))}
     
-    if(gefaildata$`stabbr`[i]=="MO"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MO", "IA", "NE", "KS", "OK", "AR", "TN", "KY", "IL"))}
+    if(failingPrograms$`stabbr`[i]=="MS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MS", "AL", "TN", "FL", "AR", "LA"))}
     
-    if(gefaildata$`stabbr`[i]=="MT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MT", "ID", "WY", "ND", "SD"))}
+    if(failingPrograms$`stabbr`[i]=="MO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MO", "IA", "NE", "KS", "OK", "AR", "TN", "KY", "IL"))}
     
-    if(gefaildata$`stabbr`[i]=="NE"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NE", "SD", "WY", "CO", "KS", "MO", "IA"))}
+    if(failingPrograms$`stabbr`[i]=="MT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MT", "ID", "WY", "ND", "SD"))}
     
-    if(gefaildata$`stabbr`[i]=="NV"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NV", "ID", "OR", "CA", "AZ", "UT"))}
+    if(failingPrograms$`stabbr`[i]=="NE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NE", "SD", "WY", "CO", "KS", "MO", "IA"))}
     
-    if(gefaildata$`stabbr`[i]=="NH"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NH", "ME", "VT", "MA"))}
+    if(failingPrograms$`stabbr`[i]=="NV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NV", "ID", "OR", "CA", "AZ", "UT"))}
     
-    if(gefaildata$`stabbr`[i]=="NJ"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NJ", "NY", "CT", "PA", "DE", "MD"))}
+    if(failingPrograms$`stabbr`[i]=="NH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NH", "ME", "VT", "MA"))}
     
-    if(gefaildata$`stabbr`[i]=="NM"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NM", "TX", "OK", "CO", "UT", "AZ"))}
+    if(failingPrograms$`stabbr`[i]=="NJ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NJ", "NY", "CT", "PA", "DE", "MD"))}
     
-    if(gefaildata$`stabbr`[i]=="NY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NY", "CT", "MA", "VT", "PA", "NJ"))}
+    if(failingPrograms$`stabbr`[i]=="NM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NM", "TX", "OK", "CO", "UT", "AZ"))}
     
-    if(gefaildata$`stabbr`[i]=="NC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NC", "VA", "TN", "GA", "SC"))}
+    if(failingPrograms$`stabbr`[i]=="NY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NY", "CT", "MA", "VT", "PA", "NJ"))}
     
-    if(gefaildata$`stabbr`[i]=="ND"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ND", "MT", "SD", "MN"))}
+    if(failingPrograms$`stabbr`[i]=="NC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NC", "VA", "TN", "GA", "SC"))}
     
-    if(gefaildata$`stabbr`[i]=="OH"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OH", "MI", "IN", "KY", "WV", "MD", "PA"))}
+    if(failingPrograms$`stabbr`[i]=="ND"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ND", "MT", "SD", "MN"))}
     
-    if(gefaildata$`stabbr`[i]=="OK"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OK", "KS", "CO", "NM", "TX", "AR", "MO"))}
+    if(failingPrograms$`stabbr`[i]=="OH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OH", "MI", "IN", "KY", "WV", "MD", "PA"))}
     
-    if(gefaildata$`stabbr`[i]=="OR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OR", "WA", "CA", "NV", "ID"))}
+    if(failingPrograms$`stabbr`[i]=="OK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OK", "KS", "CO", "NM", "TX", "AR", "MO"))}
     
-    if(gefaildata$`stabbr`[i]=="PA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("PA", "NY", "NJ", "DE", "MD", "WV", "OH"))}
+    if(failingPrograms$`stabbr`[i]=="OR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OR", "WA", "CA", "NV", "ID"))}
     
-    if(gefaildata$`stabbr`[i]=="RI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("RI", "CT", "MA"))}
+    if(failingPrograms$`stabbr`[i]=="PA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PA", "NY", "NJ", "DE", "MD", "WV", "OH"))}
     
-    if(gefaildata$`stabbr`[i]=="SC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("SC", "NC", "GA"))}
+    if(failingPrograms$`stabbr`[i]=="RI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("RI", "CT", "MA"))}
     
-    if(gefaildata$`stabbr`[i]=="SD"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("SD", "ND", "MT", "WY", "NE", "IA", "MN"))}
+    if(failingPrograms$`stabbr`[i]=="SC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SC", "NC", "GA"))}
     
-    if(gefaildata$`stabbr`[i]=="TN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("TN", "KY", "MO", "AR", "MS", "AL", "GA", "NC", "VA"))}
+    if(failingPrograms$`stabbr`[i]=="SD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SD", "ND", "MT", "WY", "NE", "IA", "MN"))}
     
-    if(gefaildata$`stabbr`[i]=="TX"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("TX", "NM", "OK", "AR", "LA"))}
+    if(failingPrograms$`stabbr`[i]=="TN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TN", "KY", "MO", "AR", "MS", "AL", "GA", "NC", "VA"))}
     
-    if(gefaildata$`stabbr`[i]=="UT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("UT", "WY", "ID", "NV", "AZ", "NM", "CO"))}
+    if(failingPrograms$`stabbr`[i]=="TX"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TX", "NM", "OK", "AR", "LA"))}
     
-    if(gefaildata$`stabbr`[i]=="VT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VT", "ME", "NH", "NY", "CT", "MA", "RI"))}
+    if(failingPrograms$`stabbr`[i]=="UT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UT", "WY", "ID", "NV", "AZ", "NM", "CO"))}
     
-    if(gefaildata$`stabbr`[i]=="VA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VA", "MD", "DC", "WV", "KY", "TN", "NC"))}
+    if(failingPrograms$`stabbr`[i]=="VT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VT", "ME", "NH", "NY", "CT", "MA", "RI"))}
     
-    if(gefaildata$`stabbr`[i]=="WA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WA", "OR", "ID"))}
+    if(failingPrograms$`stabbr`[i]=="VA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VA", "MD", "DC", "WV", "KY", "TN", "NC"))}
     
-    if(gefaildata$`stabbr`[i]=="WV"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WV", "PA", "OH", "KY", "MD", "VA"))}
+    if(failingPrograms$`stabbr`[i]=="WA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WA", "OR", "ID"))}
     
-    if(gefaildata$`stabbr`[i]=="WI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WI", "MN", "IA", "IL", "IN", "MI"))}
+    if(failingPrograms$`stabbr`[i]=="WV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WV", "PA", "OH", "KY", "MD", "VA"))}
     
-    if(gefaildata$`stabbr`[i]=="WY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WY", "MT", "ID", "UT", "CO", "NE", "SD"))}
+    if(failingPrograms$`stabbr`[i]=="WI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WI", "MN", "IA", "IL", "IN", "MI"))}
     
-    if(gefaildata$`stabbr`[i]=="AS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AS"))}
+    if(failingPrograms$`stabbr`[i]=="WY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WY", "MT", "ID", "UT", "CO", "NE", "SD"))}
     
-    if(gefaildata$`stabbr`[i]=="GU"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("GU"))}
+    if(failingPrograms$`stabbr`[i]=="AS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AS"))}
     
-    if(gefaildata$`stabbr`[i]=="MP"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MP"))}
+    if(failingPrograms$`stabbr`[i]=="GU"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GU"))}
     
-    if(gefaildata$`stabbr`[i]=="PR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("PR"))}
+    if(failingPrograms$`stabbr`[i]=="MP"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MP"))}
     
-    if(gefaildata$`stabbr`[i]=="UM"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("UM"))}
+    if(failingPrograms$`stabbr`[i]=="PR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PR"))}
     
-    if(gefaildata$`stabbr`[i]=="VI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VI"))}
+    if(failingPrograms$`stabbr`[i]=="UM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UM"))}
     
-    gealternatives <- gealternatives %>% mutate(`Distance` = rep(NA))
-    program.level <- gefaildata$`cred_lvl`[i]
-    program.category <- gefaildata$`Category`[i]
-    program.2digCIP <- gefaildata$`cip2`[i]
-    program.4digCIP <- gefaildata$`cip4`[i]
+    if(failingPrograms$`stabbr`[i]=="VI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VI"))}
+    
+    #### End #### 
+    
+    #### Apply filters to alternativePrograms #### 
+    
+    program.level <- failingPrograms$`cred_lvl`[i]
+    program.category <- failingPrograms$`Category`[i]
+    program.2digCIP <- failingPrograms$`cip2`[i]
+    program.4digCIP <- failingPrograms$`cip4`[i]
     
     # Apply the proper level filter to gepassdata
     if(levelSelection=="Same credential level"){
-      gealternatives <- gealternatives %>% filter(
+      alternativePrograms <- alternativePrograms %>% filter(
         `cred_lvl` == program.level
       )
     }
     if(levelSelection=="Same credential category"){
-      gealternatives <- gealternatives %>% filter(
+      alternativePrograms <- alternativePrograms %>% filter(
         `Category` == program.category
       )
     }
     
     # Apply the proper CIP code filter to gepassdata
     if(cipSelection=="Same 4-digit CIP"){
-      gealternatives <- gealternatives %>% filter(
+      alternativePrograms <- alternativePrograms %>% filter(
         `cip4`==program.4digCIP
       )
     }
     if(cipSelection=="Same 2-digit CIP"){
-      gealternatives <- gealternatives %>% filter(
+      alternativePrograms <- alternativePrograms %>% filter(
         `cip2`==program.2digCIP
       )
     }  
     
+    #### End #### 
+    
+    #### Calculate ZIP distance #### 
+    
     # Only run the next lines if there is remaining passing programs: 
-    if(nrow(gealternatives) > 0){
+    if(nrow(alternativePrograms) > 0){
       
       # Calculate distance for every other program
-      for(j in (1:nrow(gealternatives))){
-        gealternatives$`Distance`[j] <- zip_distance(gefaildata$`zip`[i], gealternatives$`zip`[j], units="miles")$distance
+      for(j in (1:nrow(alternativePrograms))){
+        
+        # Set both programs are online, set distance to 0 
+        if((failingPrograms$`Distance status`[i]) & (alternativePrograms$`Distance status`[j])){
+          alternativePrograms$`Distance`[j] <- 0
+          
+        # Otherwise, calculate ZIP distance 
+        }else{
+          alternativePrograms$`Distance`[j] <- zip_distance(
+            failingPrograms$`zip`[i], 
+            alternativePrograms$`zip`[j], 
+            units="miles"
+          )$distance
+        }
       }
       
-      gefaildata$`Distance to nearest alternative`[i] <- suppressWarnings(min(gealternatives$`Distance`, na.rm=TRUE))
+      alternativePrograms <- alternativePrograms %>% filter(
+        is.na(`Distance`)==FALSE, 
+        is.infinite(`Distance`)==FALSE
+      ) %>% arrange(
+        `Distance`, 
+        desc(`mdearnp3`)
+      )
+      
+      failingPrograms$`Distance to nearest alternative`[i] <- suppressWarnings(
+        min(alternativePrograms$`Distance`, na.rm=TRUE)
+      )
+      
+      failingPrograms$`alt_schname` <- alternativePrograms$`schname`[1]
+      failingPrograms$`alt_cred_lvl` <- alternativePrograms$`cred_lvl`[1]
+      failingPrograms$`alt_cip4` <- alternativePrograms$`cip4`[1]
+      failingPrograms$`alt_zip` <- alternativePrograms$`zip`[1]
+      failingPrograms$`alt_opeid6` <- alternativePrograms$`opeid6`[1]
       
     }else{
-      gefaildata$`Distance to nearest alternative`[i] <- NA
+      failingPrograms$`Distance to nearest alternative`[i] <- NA
+      failingPrograms$`alt_schname` <- NA
+      failingPrograms$`alt_cred_lvl` <- NA
+      failingPrograms$`alt_cip4` <- NA
+      failingPrograms$`alt_zip` <- NA
+      failingPrograms$`alt_opeid6` <- NA
     }
     
-    print(gefaildata$`Distance to nearest alternative`[i])
+    #### End #### 
     
-    rm("gealternatives", 
+    #### Remove objects #### 
+    
+    rm("alternativePrograms", 
        "program.level", 
        "program.category", 
        "program.2digCIP", 
        "program.4digCIP")
+    
+    #### End #### 
+
   }
-  return(gefaildata)
+  return(failingPrograms)
 }
+
+#### Run distance function: Full data only ####
+
+setFullEarningsData <- TRUE 
+setFullDebtData <- TRUE 
+ge.YYL4.FDO <- calc_dist(
+  gedata=ge, 
+  lepSelection="Y", 
+  geSelection="Y", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.YYL4.FDO"
+)
+ge.YNL4.FDO <- calc_dist(
+  gedata=ge, 
+  lepSelection="Y", 
+  geSelection="N", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.YNL4.FDO"
+)
+ge.NYL4.FDO <- calc_dist(
+  gedata=ge, 
+  lepSelection="N", 
+  geSelection="Y", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.NYL4.FDO"
+)
 
 #### End #### 
 
-#### Run distance function ####
+#### Run distance function: Not limited to full data #### 
+
+setFullEarningsData <- FALSE 
+setFullDebtData <- FALSE 
+ge.YYL4.NL <- calc_dist(
+  gedata=ge, 
+  lepSelection="Y", 
+  geSelection="Y", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.YYL4.NL"
+)
+ge.YNL4.NL <- calc_dist(
+  gedata=ge, 
+  lepSelection="Y", 
+  geSelection="N", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.YNL4.NL"
+)
+ge.NYL4.NL <- calc_dist(
+  gedata=ge, 
+  lepSelection="N", 
+  geSelection="Y", 
+  levelSelection="Same credential level", 
+  cipSelection="Same 4-digit CIP", 
+  fullEarningsData=setFullEarningsData, 
+  fullDebtData=setFullDebtData, 
+  runName="ge.NYL4.NL"
+)
+
+#### End #### 
 
 # Make calculations (this will take a long time to run)
 ge.fail.A <- calc_dist(ge.pass, ge.fail, "Same credential level", "Same 4-digit CIP")
