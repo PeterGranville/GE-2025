@@ -1332,19 +1332,27 @@ ge.NYL4.NL <- list(
 #### End #### 
 
 analyzeSimulation <- function(
-    geFull,
+    geFull0,
     simulationData,
-    disaggregateLever1, 
-    disaggregateVar1,
-    disaggregateLever2, 
-    disaggregateVar2
+    simulationName,
+    certsOnly
 ){
   
-  #For testing
-  geFull <- ge 
-  simulationData <- ge.YYL4.FDO 
+  #### Create datasets #### 
+  
+  geFull <- geFull0
   geFailing <- simulationData[[1]]
   gePassing <- simulationData[[2]]
+  
+  if(certsOnly==TRUE){
+    geFull <- geFull %>% filter(`cred_lvl`=="UG Certificates")
+    geFailing <- geFailing %>% filter(`cred_lvl`=="UG Certificates")
+    gePassing <- gePassing %>% filter(`cred_lvl`=="UG Certificates")
+  }
+  
+  #### End #### 
+  
+  #### Program totals #### 
   
   # Total failing programs (loss of T-IV aid)
   V1 <- nrow(geFailing)
@@ -1363,6 +1371,10 @@ analyzeSimulation <- function(
   
   # Share of students in programs with insufficient data
   V6 <- (nrow(geFull) - (nrow(geFailing) + nrow(gePassing))) / nrow(geFull)
+  
+  #### End #### 
+  
+  #### Distance to nearest program ####
   
   # Share of students with no alternative program within 30 miles
   geFailing <- geFailing %>% mutate(
@@ -1384,414 +1396,191 @@ analyzeSimulation <- function(
   )
   V8 <- mean(geFailing$`Distance (within 30 miles)`, na.rm=TRUE)
   
+  #### End #### 
+  
+  #### Average earnings: All Title IV students #### 
+  
   # Average earnings 3 years after completion, pre-transfer: All Title IV recipients
-  averageEarnings1 <- 
+  averageEarnings1 <- geFull %>% filter(
+    is.na(`mdearnp3`)==FALSE, 
+    is.na(`count_AY1617`)==FALSE
+  ) %>% summarize(
+    `Average earnings pre-transfer` = weighted.mean(x=`mdearnp3`, w=`count_AY1617`)
+  )
+  V9 <- averageEarnings1$`Average earnings pre-transfer`[1]
+  
+  # Simulate transfer 
+  transferStudents <- geFailing %>% select(
+    `alt_cip4`, 
+    `alt_cred_lvl`, 
+    `alt_opeid6`, 
+    `count_AY1617`
+  ) %>% rename(
+    `cip4` = `alt_cip4`, 
+    `cred_lvl` = `alt_cred_lvl`, 
+    `opeid6` = `alt_opeid6`, 
+    `In-transfers` = `count_AY1617`
+  ) %>% filter(
+    is.na(`In-transfers`)==FALSE
+  )
+  transferStudents <- aggregate(
+    data=transferStudents, 
+    `In-transfers` ~ `opeid6` + `cred_lvl` + `cip4`,
+    FUN=sum
+  )
+  geFull <- left_join(x=geFull, y=transferStudents, by=c("opeid6", "cred_lvl", "cip4"))
+  transferStudents <- transferStudents %>% mutate(
+    `alt_Prog ID` = paste(
+      `opeid6`, 
+      `cip4`, 
+      `cred_lvl`, 
+      sep="..."
+    )
+  )
+  
+  # Re-calculate the new weights 
+  geFull <- geFull %>% mutate(
+    `count_AY1617` = ifelse(
+      is.na(`count_AY1617`), 
+      0, 
+      `count_AY1617`
+    ), 
+    `In-transfers` = ifelse(
+      is.na(`In-transfers`), 
+      0, 
+      `In-transfers`
+    )
+  ) %>% mutate(
+    `Post-transfer student count` = ifelse(
+      `Prog ID` %in% geFailing$`Prog ID`,
+      0,
+      `count_AY1617` + `In-transfers`
+    )
+  )
   
   # Average earnings 3 years after completion, post-transfer: All Title IV recipients
+  averageEarnings2 <- geFull %>% filter(
+    is.na(`mdearnp3`)==FALSE, 
+    is.na(`Post-transfer student count`)==FALSE
+  ) %>% summarize(
+    `Average earnings post-transfer` = weighted.mean(x=`mdearnp3`, w=`Post-transfer student count`)
+  )
+  V10 <- averageEarnings2$`Average earnings post-transfer`[1]
+  
   # Absolute ($) increase in earnings: All Title IV students
+  V11 <- V10 - V9 
+  
   # Relative (%) increase in earnings: All Title IV students
+  V12 <- V11 / V9
+  
+  #### End #### 
+  
+  #### Average earnings: Title IV recipients at failing programs #### 
+  
   # Average earnings 3 years after completion, pre-transfer: Title IV recipients at failing programs
+  averageEarnings3 <- geFailing %>% filter(
+    is.na(`mdearnp3`)==FALSE, 
+    is.na(`count_AY1617`)==FALSE
+  ) %>% summarize(
+    `Average earnings pre-transfer (TIV Failing)` = weighted.mean(x=`mdearnp3`, w=`count_AY1617`)
+  )
+  V13 <- averageEarnings3$`Average earnings pre-transfer (TIV Failing)`[1]
+  
   # Average earnings 3 years after completion, post-transfer: Title IV recipients at failing programs
+  averageEarnings4 <- geFull %>% filter(
+    `Prog ID` %in% transferStudents$`alt_Prog ID`
+  ) %>% filter(
+    is.na(`mdearnp3`)==FALSE, 
+    is.na(`In-transfers`)==FALSE
+  ) %>% summarize(
+    `Average earnings post-transfer (TIV Failing)` = weighted.mean(x=`mdearnp3`, w=`In-transfers`)
+  )
+  V14 <- averageEarnings4$`Average earnings post-transfer (TIV Failing)`[1]
+  
   # Absolute ($) increase in earnings: Title IV recipients at failing programs
+  V15 <- V14 - V13 
+  
   # Relative (%) increase in earnings: Title IV recipients at failing programs
-  
-  
-  
-  #### Say how many failing programs had no alternative ####
+  V16 <- V15 / V13 
   
   #### End #### 
   
-  #### Say how many programs have no earnings data ####
+  #### Return findings #### 
+  
+  returnDF <- data.frame(
+    `Simulation name` = c(simulationName), 
+    `Certificates only` = c(certsOnly),
+    `Total failing programs (loss of T-IV aid)` = c(V1), 
+    `Total passing programs (keeps T-IV aid)` = c(V2),
+    `Total programs with insufficient data` = c(V3), 
+    `Share of students in failing programs` = c(V4), 
+    `Share of students in passing programs` = c(V5), 
+    `Share of students in programs with insufficient data` = c(V6), 
+    `Share of students with no alternative program within 30 miles` = c(V7), 
+    `Average distance in miles to nearest alternative program (<30 miles)` = c(V8),
+    `Average earnings 3 years after completion, pre-transfer: All Title IV recipients` = c(V9), 
+    `Average earnings 3 years after completion, post-transfer: All Title IV recipients` = c(V10), 
+    `Absolute ($) increase in earnings: All Title IV students` = c(V11), 
+    `Relative (%) increase in earnings: All Title IV students` = c(V12), 
+    `Average earnings 3 years after completion, pre-transfer: Title IV recipients at failing programs` = c(V13), 
+    `Average earnings 3 years after completion, post-transfer: Title IV recipients at failing programs` = c(V14), 
+    `Absolute ($) increase in earnings: Title IV recipients at failing programs` = c(V15), 
+    `Relative (%) increase in earnings: Title IV recipients at failing programs` = c(V16), 
+    check.names=FALSE
+  )
+  
+  return(returnDF)
+  rm(
+    returnDF, 
+    V1,
+    V2,
+    V3,
+    V4,
+    V5,
+    V6,
+    V7,
+    V8,
+    V9,
+    V10, 
+    V11,
+    V12,
+    V13,
+    V14,
+    V15, 
+    V16, 
+    geFull,
+    geFailing,
+    gePassing,
+    transferStudents,
+    averageEarnings1,
+    averageEarnings2,
+    averageEarnings3,
+    averageEarnings4
+  )
   
   #### End #### 
-  
-  #### Create transferStudents #### 
-  
-  #### End #### 
-  
-  #### Calculate typical earnings pre- and post-transfer ####
-  
-  #### End #### 
-  
   
 }
 
+resultsOverall <- rbind(
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=FALSE)
+)
+resultsCerts <- rbind(
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=TRUE), 
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=TRUE)
+)
 
-
-# Add in the determinations on online programs 
-ge.fail.A <- left_join(x=ge.fail.A, y=online.programs, by=c("opeid6", "cip4", "cred_lvl"))
-ge.fail.B <- left_join(x=ge.fail.B, y=online.programs, by=c("opeid6", "cip4", "cred_lvl")) 
-ge.fail.D <- left_join(x=ge.fail.D, y=online.programs, by=c("opeid6", "cip4", "cred_lvl")) 
-ge.fail.A$`Distance to nearest alternative`[ge.fail.A$`Online alternative A`=="Online with an online alternative"] <- 0
-ge.fail.B$`Distance to nearest alternative`[ge.fail.B$`Online alternative B`=="Online with an online alternative"] <- 0
-ge.fail.D$`Distance to nearest alternative`[ge.fail.D$`Online alternative D`=="Online with an online alternative"] <- 0
-
-# Count the number of students with no alternative within 30 miles 
-ge.fail.A$`Students with no nearby options` <- ifelse(ge.fail.A$`Distance to nearest alternative` > 30, ge.fail.A$`count_AY1617`, 0)
-ge.fail.B$`Students with no nearby options` <- ifelse(ge.fail.B$`Distance to nearest alternative` > 30, ge.fail.B$`count_AY1617`, 0)
-ge.fail.D$`Students with no nearby options` <- ifelse(ge.fail.D$`Distance to nearest alternative` > 30, ge.fail.D$`count_AY1617`, 0)
-
-# Set programs with no alternative within 30 miles to NA
-ge.fail.A$`Distance to nearest alternative`[ge.fail.A$`Distance to nearest alternative` > 30] <- NA
-ge.fail.B$`Distance to nearest alternative`[ge.fail.B$`Distance to nearest alternative` > 30] <- NA
-ge.fail.D$`Distance to nearest alternative`[ge.fail.D$`Distance to nearest alternative` > 30] <- NA
-
-# Average distance, excluding students with no option in 30 miles 
-weighted.mean(ge.fail.A$`Distance to nearest alternative`, w = ge.fail.A$`count_AY1617`, na.rm=TRUE)
-weighted.mean(ge.fail.B$`Distance to nearest alternative`, w = ge.fail.B$`count_AY1617`, na.rm=TRUE)
-weighted.mean(ge.fail.D$`Distance to nearest alternative`, w = ge.fail.D$`count_AY1617`, na.rm=TRUE)
-
-# Share with no option within 30 miles 
-sum(ge.fail.A$`Students with no nearby options`, na.rm=TRUE) / sum(ge.fail.A$`count_AY1617`, na.rm=TRUE)
-sum(ge.fail.B$`Students with no nearby options`, na.rm=TRUE) / sum(ge.fail.B$`count_AY1617`, na.rm=TRUE)
-sum(ge.fail.D$`Students with no nearby options`, na.rm=TRUE) / sum(ge.fail.D$`count_AY1617`, na.rm=TRUE)
-
-#### End #### 
-
-#### ZIP distance function: Record nearest program #### 
-
-calc_dist_and_record <- function(gepassdata, gefaildata, levelSelection, cipSelection){
-  
-  gefaildata$`Distance to nearest alternative` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_schname` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_cred_lvl` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_cip4` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_zip` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_opeid6` <- rep(NA, nrow(gefaildata))
-  
-  for(i in (1:nrow(gefaildata))){
-    
-    print(i)
-    
-    gealternatives <- gepassdata
-    
-    if(gefaildata$`stabbr`[i]=="AL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AL", "MS", "TN", "GA", "FL"))}
-    
-    if(gefaildata$`stabbr`[i]=="AK"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AK"))}
-    
-    if(gefaildata$`stabbr`[i]=="AZ"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AZ", "CA", "NV", "UT", "CO", "NM"))}
-    
-    if(gefaildata$`stabbr`[i]=="AR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AR", "MO", "TN", "MS", "LA", "TX", "OK"))}
-    
-    if(gefaildata$`stabbr`[i]=="CA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CA", "AZ", "NV", "OR"))}
-    
-    if(gefaildata$`stabbr`[i]=="CO"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CO", "WY", "NE", "KS", "OK", "NM", "AZ", "UT"))}
-    
-    if(gefaildata$`stabbr`[i]=="CT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("CT", "RI", "MA", "NY", "NJ"))}
-    
-    if(gefaildata$`stabbr`[i]=="DE"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("DE", "NJ", "MD", "PA"))}
-    
-    if(gefaildata$`stabbr`[i]=="DC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("DC", "MD", "VA"))}
-    
-    if(gefaildata$`stabbr`[i]=="FL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("FL", "GA", "MS", "AL"))}
-    
-    if(gefaildata$`stabbr`[i]=="GA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("GA", "FL", "AL", "TN", "SC", "NC"))}
-    
-    if(gefaildata$`stabbr`[i]=="HI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("HI"))}
-    
-    if(gefaildata$`stabbr`[i]=="ID"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ID", "WA", "OR", "NV", "UT", "WY", "MT"))}
-    
-    if(gefaildata$`stabbr`[i]=="IL"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IL", "WI", "IA", "MO", "KY", "IN", "MI", "TN"))}
-    
-    if(gefaildata$`stabbr`[i]=="IN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IN", "MI", "OH", "KY", "IL", "WI"))}
-    
-    if(gefaildata$`stabbr`[i]=="IA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("IA", "SD", "NE", "MO", "KS", "IL", "WI", "MN"))}
-    
-    if(gefaildata$`stabbr`[i]=="KS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("KS", "NE", "CO", "OK", "MO", "IA"))}
-    
-    if(gefaildata$`stabbr`[i]=="KY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("KY", "IL", "IN", "OH", "WV", "VA", "TN", "MO"))}
-    
-    if(gefaildata$`stabbr`[i]=="LA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("LA", "MS", "AR", "TX"))}
-    
-    if(gefaildata$`stabbr`[i]=="ME"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ME", "NH", "MA", "VT"))}
-    
-    if(gefaildata$`stabbr`[i]=="MD"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MD", "DC", "VA", "WV", "PA", "DE", "NJ"))}
-    
-    if(gefaildata$`stabbr`[i]=="MA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MA", "ME", "NH", "VT", "NY", "CT", "RI"))}
-    
-    if(gefaildata$`stabbr`[i]=="MI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MI", "WI", "IL", "IN", "OH"))}
-    
-    if(gefaildata$`stabbr`[i]=="MN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MN", "ND", "SD", "IA", "WI"))}
-    
-    if(gefaildata$`stabbr`[i]=="MS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MS", "AL", "TN", "FL", "AR", "LA"))}
-    
-    if(gefaildata$`stabbr`[i]=="MO"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MO", "IA", "NE", "KS", "OK", "AR", "TN", "KY", "IL"))}
-    
-    if(gefaildata$`stabbr`[i]=="MT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MT", "ID", "WY", "ND", "SD"))}
-    
-    if(gefaildata$`stabbr`[i]=="NE"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NE", "SD", "WY", "CO", "KS", "MO", "IA"))}
-    
-    if(gefaildata$`stabbr`[i]=="NV"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NV", "ID", "OR", "CA", "AZ", "UT"))}
-    
-    if(gefaildata$`stabbr`[i]=="NH"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NH", "ME", "VT", "MA"))}
-    
-    if(gefaildata$`stabbr`[i]=="NJ"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NJ", "NY", "CT", "PA", "DE", "MD"))}
-    
-    if(gefaildata$`stabbr`[i]=="NM"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NM", "TX", "OK", "CO", "UT", "AZ"))}
-    
-    if(gefaildata$`stabbr`[i]=="NY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NY", "CT", "MA", "VT", "PA", "NJ"))}
-    
-    if(gefaildata$`stabbr`[i]=="NC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("NC", "VA", "TN", "GA", "SC"))}
-    
-    if(gefaildata$`stabbr`[i]=="ND"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("ND", "MT", "SD", "MN"))}
-    
-    if(gefaildata$`stabbr`[i]=="OH"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OH", "MI", "IN", "KY", "WV", "MD", "PA"))}
-    
-    if(gefaildata$`stabbr`[i]=="OK"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OK", "KS", "CO", "NM", "TX", "AR", "MO"))}
-    
-    if(gefaildata$`stabbr`[i]=="OR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("OR", "WA", "CA", "NV", "ID"))}
-    
-    if(gefaildata$`stabbr`[i]=="PA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("PA", "NY", "NJ", "DE", "MD", "WV", "OH"))}
-    
-    if(gefaildata$`stabbr`[i]=="RI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("RI", "CT", "MA"))}
-    
-    if(gefaildata$`stabbr`[i]=="SC"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("SC", "NC", "GA"))}
-    
-    if(gefaildata$`stabbr`[i]=="SD"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("SD", "ND", "MT", "WY", "NE", "IA", "MN"))}
-    
-    if(gefaildata$`stabbr`[i]=="TN"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("TN", "KY", "MO", "AR", "MS", "AL", "GA", "NC", "VA"))}
-    
-    if(gefaildata$`stabbr`[i]=="TX"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("TX", "NM", "OK", "AR", "LA"))}
-    
-    if(gefaildata$`stabbr`[i]=="UT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("UT", "WY", "ID", "NV", "AZ", "NM", "CO"))}
-    
-    if(gefaildata$`stabbr`[i]=="VT"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VT", "ME", "NH", "NY", "CT", "MA", "RI"))}
-    
-    if(gefaildata$`stabbr`[i]=="VA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VA", "MD", "DC", "WV", "KY", "TN", "NC"))}
-    
-    if(gefaildata$`stabbr`[i]=="WA"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WA", "OR", "ID"))}
-    
-    if(gefaildata$`stabbr`[i]=="WV"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WV", "PA", "OH", "KY", "MD", "VA"))}
-    
-    if(gefaildata$`stabbr`[i]=="WI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WI", "MN", "IA", "IL", "IN", "MI"))}
-    
-    if(gefaildata$`stabbr`[i]=="WY"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("WY", "MT", "ID", "UT", "CO", "NE", "SD"))}
-    
-    if(gefaildata$`stabbr`[i]=="AS"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("AS"))}
-    
-    if(gefaildata$`stabbr`[i]=="GU"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("GU"))}
-    
-    if(gefaildata$`stabbr`[i]=="MP"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("MP"))}
-    
-    if(gefaildata$`stabbr`[i]=="PR"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("PR"))}
-    
-    if(gefaildata$`stabbr`[i]=="UM"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("UM"))}
-    
-    if(gefaildata$`stabbr`[i]=="VI"){gealternatives <- gealternatives %>% filter(`stabbr` %in% c("VI"))}
-    
-    gealternatives$`Distance` <- rep(NA, nrow(gealternatives))
-    program.level <- gefaildata$`cred_lvl`[i]
-    program.category <- gefaildata$`Category`[i]
-    program.2digCIP <- gefaildata$`cip2`[i]
-    program.4digCIP <- gefaildata$`cip4`[i]
-    
-    # Apply the proper level filter to gepassdata
-    if(levelSelection=="Same credential level"){gealternatives <- gealternatives %>% filter(`cred_lvl` == program.level)}
-    if(levelSelection=="Same credential category"){gealternatives <- gealternatives %>% filter(`Category` == program.category)}
-    
-    # Apply the proper CIP code filter to gepassdata
-    if(cipSelection=="Same 4-digit CIP"){gealternatives <- gealternatives %>% filter(`cip4`==program.4digCIP)}
-    if(cipSelection=="Same 2-digit CIP"){gealternatives <- gealternatives %>% filter(`cip2`==program.2digCIP)}  
-    
-    # Only run the next lines if there is remaining passing programs: 
-    if(nrow(gealternatives) > 0){
-      
-      # Calculate distance for every other program
-      for(j in (1:nrow(gealternatives))){
-        gealternatives$`Distance`[j] <- zip_distance(gefaildata$`zip`[i], gealternatives$`zip`[j], units="miles")$distance
-      }
-      
-      gealternatives <- gealternatives %>% filter(is.na(`Distance`)==FALSE)
-      gefaildata$`Distance to nearest alternative`[i] <- suppressWarnings(min(gealternatives$`Distance`, na.rm=TRUE))
-      gealternatives <- gealternatives %>% filter(is.infinite(`Distance`)==FALSE) 
-      gealternatives <- gealternatives %>% arrange(`Distance`, desc(`mdearnp3`))
-      
-      gefaildata$`alt_schname`[i] <- gealternatives$`schname`[1]
-      gefaildata$`alt_cred_lvl`[i] <- gealternatives$`cred_lvl`[1]
-      gefaildata$`alt_cip4`[i] <- gealternatives$`cip4`[1]
-      gefaildata$`alt_zip`[i] <- gealternatives$`zip`[1]
-      gefaildata$`alt_opeid6`[i] <- gealternatives$`opeid6`[1]
-      
-    }else{
-      gefaildata$`Distance to nearest alternative`[i] <- NA
-      gefaildata$`alt_schname`[i] <- NA
-      gefaildata$`alt_cred_lvl`[i] <- NA
-      gefaildata$`alt_cip4`[i] <- NA
-      gefaildata$`alt_zip`[i] <- NA
-      gefaildata$`alt_opeid6`[i] <- NA
-    }
-    
-    print(gefaildata$`Distance to nearest alternative`[i])
-    print(gefaildata$`alt_schname`[i])
-    
-    rm("gealternatives", 
-       "program.level", 
-       "program.category", 
-       "program.2digCIP", 
-       "program.4digCIP")
-  }
-  return(gefaildata)
-}
-
-ge.fail.A_record <- calc_dist_and_record(ge.pass, ge.fail, "Same credential level", "Same 4-digit CIP")
-write.csv(ge.fail.A_record, "ge.fail.A_record.csv", row.names=FALSE)
-
-#### End #### 
-
-###########################################
-#### Proximity of Alternative Options  ####
-#### Full Earnings and Debt Data Only  ####
-###########################################
-
-#### Load in GE program data ####
-
-ge <- fread("nprm-2022ppd-public-suppressed.csv", header=TRUE, select=c(
-  "schname", 
-  "inGE", 
-  "opeid6", 
-  "stabbr", 
-  "zip",
-  "control_peps",
-  "cip4", 
-  "cipdesc", 
-  "cip2", 
-  "cip2_title_2010", 
-  "cred_lvl", 
-  "passfail_2019", 
-  "mdearnp3",
-  "debtservicenpp_md",
-  "count_AY1617"
-))
-ge <- ge %>% filter((`control_peps` %in% c("Foreign For-Profit", "Foreign Private"))==FALSE)
-
-ge.level.category <- data.table("cred_lvl" = c(
-  "UG Certificates", 
-  "Associate's", 
-  "Bachelor's",
-  "Post-BA Certs",
-  "Grad Certs", 
-  "Master's", 
-  "Professional",
-  "Doctoral"
-), "Category" = c(
-  "Undergraduate", 
-  "Undergraduate", 
-  "Undergraduate", 
-  "Undergraduate", 
-  "Graduate", 
-  "Graduate", 
-  "Graduate", 
-  "Graduate"
-))
-
-ge <- left_join(x=ge, y=ge.level.category, by="cred_lvl")
-ge$zip <- substr(ge$zip, 1, 5)
-
-ge.fail <- ge %>% filter(`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")) %>% filter(inGE==1)
-ge.pass <- ge %>% filter(`passfail_2019` %in% c("Pass", "No DTE/EP data")) %>% filter(is.na(`mdearnp3`)==FALSE) %>% filter(is.na(`debtservicenpp_md`)==FALSE)
-
-#### End #### 
-
-#### ZIP distance function: Record nearest program #### 
-
-calc_dist_and_record <- function(gepassdata, gefaildata, levelSelection, cipSelection){
-  
-  gefaildata$`Distance to nearest alternative` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_schname` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_cred_lvl` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_cip4` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_zip` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_opeid6` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_mdearnp3` <- rep(NA, nrow(gefaildata))
-  gefaildata$`alt_debtservicenpp_md` <- rep(NA, nrow(gefaildata))
-  
-  for(i in (1:nrow(gefaildata))){
-    
-    print(i)
-    
-    gealternatives <- gepassdata
-    gealternatives$`Distance` <- rep(NA, nrow(gealternatives))
-    program.level <- gefaildata$`cred_lvl`[i]
-    program.category <- gefaildata$`Category`[i]
-    program.2digCIP <- gefaildata$`cip2`[i]
-    program.4digCIP <- gefaildata$`cip4`[i]
-    
-    # Apply the proper level filter to gepassdata
-    if(levelSelection=="Same credential level"){gealternatives <- gealternatives %>% filter(`cred_lvl` == program.level)}
-    if(levelSelection=="Same credential category"){gealternatives <- gealternatives %>% filter(`Category` == program.category)}
-    
-    # Apply the proper CIP code filter to gepassdata
-    if(cipSelection=="Same 4-digit CIP"){gealternatives <- gealternatives %>% filter(`cip4`==program.4digCIP)}
-    if(cipSelection=="Same 2-digit CIP"){gealternatives <- gealternatives %>% filter(`cip2`==program.2digCIP)}  
-    
-    # Only run the next lines if there is remaining passing programs: 
-    if(nrow(gealternatives) > 0){
-      
-      # Calculate distance for every other program
-      for(j in (1:nrow(gealternatives))){
-        gealternatives$`Distance`[j] <- zip_distance(gefaildata$`zip`[i], gealternatives$`zip`[j], units="miles")$distance
-      }
-      
-      gealternatives <- gealternatives %>% filter(is.na(`Distance`)==FALSE)
-      gefaildata$`Distance to nearest alternative`[i] <- suppressWarnings(min(gealternatives$`Distance`, na.rm=TRUE))
-      gealternatives <- gealternatives %>% filter(is.infinite(`Distance`)==FALSE) 
-      gealternatives <- gealternatives %>% arrange(`Distance`, desc(`mdearnp3`))
-      
-      gefaildata$`alt_schname`[i] <- gealternatives$`schname`[1]
-      gefaildata$`alt_cred_lvl`[i] <- gealternatives$`cred_lvl`[1]
-      gefaildata$`alt_cip4`[i] <- gealternatives$`cip4`[1]
-      gefaildata$`alt_zip`[i] <- gealternatives$`zip`[1]
-      gefaildata$`alt_opeid6`[i] <- gealternatives$`opeid6`[1]
-      gefaildata$`alt_mdearnp3`[i] <- gealternatives$`mdearnp3`[1]
-      gefaildata$`alt_debtservicenpp_md`[i] <- gealternatives$`debtservicenpp_md`[1]
-      
-    }else{
-      gefaildata$`Distance to nearest alternative`[i] <- NA
-      gefaildata$`alt_schname`[i] <- NA
-      gefaildata$`alt_cred_lvl`[i] <- NA
-      gefaildata$`alt_cip4`[i] <- NA
-      gefaildata$`alt_zip`[i] <- NA
-      gefaildata$`alt_opeid6`[i] <- NA
-    }
-    
-    print(gefaildata$`Distance to nearest alternative`[i])
-    print(gefaildata$`alt_schname`[i])
-    
-    rm("gealternatives", 
-       "program.level", 
-       "program.category", 
-       "program.2digCIP", 
-       "program.4digCIP")
-  }
-  return(gefaildata)
-}
-
-ge.fail.fulldata_record <- calc_dist_and_record(ge.pass, ge.fail, "Same credential level", "Same 4-digit CIP")
-write.csv(ge.fail.fulldata_record, "ge.fail.fulldata_record.csv", row.names=FALSE)
-
-#### End #### 
-
-#### Running weighted means ####
-
-ge.fail.fulldata_record <- read.csv("ge.fail.fulldata_record.csv", header=TRUE)
-
-ge.fail.fulldata_record_earnings <- ge.fail.fulldata_record %>% filter(is.na(`alt_mdearnp3`)==FALSE) %>% filter(is.na(`mdearnp3`)==FALSE) %>% filter(is.na(`count_AY1617`)==FALSE)
-
-`Average earnings in state (pre-transfer)` <- weighted.mean(ge.fail.fulldata_record_earnings$`mdearnp3`, w = ge.fail.fulldata_record_earnings$`count_AY1617`, na.rm=TRUE)
-`Average earnings in state (post-transfer)` <- weighted.mean(ge.fail.fulldata_record_earnings$`alt_mdearnp3`, w = ge.fail.fulldata_record_earnings$`count_AY1617`, na.rm=TRUE)
-
-ge.fail.fulldata_record_debt <- ge.fail.fulldata_record %>% filter(is.na(`alt_debtservicenpp_md`)==FALSE) %>% filter(is.na(`debtservicenpp_md`)==FALSE) %>% filter(is.na(`count_AY1617`)==FALSE)
-
-`Average annual debt servicing in state (pre-transfer)` <- weighted.mean(ge.fail.fulldata_record_debt$`debtservicenpp_md`, w = ge.fail.fulldata_record_debt$`count_AY1617`, na.rm=TRUE)
-`Average annual debt servicing in state (post-transfer)` <- weighted.mean(ge.fail.fulldata_record_debt$`alt_debtservicenpp_md`, w = ge.fail.fulldata_record_debt$`count_AY1617`, na.rm=TRUE)
-
-`Aggregate discretionary D/E rate (pre-transfer)` <- `Average annual debt servicing in state (pre-transfer)` / (`Average earnings in state (pre-transfer)` - 18735)
-`Aggregate discretionary D/E rate (post-transfer)` <- `Average annual debt servicing in state (post-transfer)` / (`Average earnings in state (post-transfer)` - 18735)
-
-`Aggregate annual D/E rate (pre-transfer)` <- `Average annual debt servicing in state (pre-transfer)` / `Average earnings in state (pre-transfer)`
-`Aggregate annual D/E rate (post-transfer)` <- `Average annual debt servicing in state (post-transfer)` / `Average earnings in state (post-transfer)`
-
-#### End #### 
+write.csv(resultsOverall, "Results overall 10-07-2025.csv", row.names=FALSE)
+write.csv(resultsCerts, "Results certs-only 10-07-2025.csv", row.names=FALSE)
 
 ###########################################
 #### Improvements to earnings from GE  ####
