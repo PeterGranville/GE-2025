@@ -510,18 +510,30 @@ hd <- read.csv(
   `OPEID`
 ) %>% filter(
   `OPEID` != "-2"
+) %>% rename(
+  `OPEID8` = `OPEID`
+) %>% mutate(
+  `OPEID8` = as.character(`OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==1, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==2, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==3, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==4, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==5, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==6, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID8` = ifelse(nchar(`OPEID8`)==7, paste("0", `OPEID8`, sep=""), `OPEID8`)
+) %>% mutate(
+  `OPEID6` = as.numeric(substr(`OPEID8`, 1, 6))
+) %>% select(
+  `UNITID`, 
+  `OPEID6`
 )
-
-hd$OPEID <- as.character(hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==1, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==2, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==3, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==4, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==5, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==6, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID <- ifelse(nchar(hd$OPEID)==7, paste("0", hd$OPEID, sep=""), hd$OPEID)
-hd$OPEID6 <- as.numeric(substr(hd$OPEID, 1, 6))
-hd <- hd %>% select(`UNITID`, `OPEID6`)
 
 #### End ####  
 
@@ -529,7 +541,7 @@ hd <- hd %>% select(`UNITID`, `OPEID6`)
 
 cdep <- read.csv("c2019dep_rv.csv", header=TRUE)
 
-cdep <- right_join(x=hd, y=cdep, by="UNITID")
+cdep <- left_join(x=cdep, y=hd, by="UNITID")
 rm(hd)
 
 #### End #### 
@@ -689,7 +701,7 @@ online.programs <- online.programs %>% select(
 #### End #### 
 
 ###########################################
-#### Proximity of Alternative Options  ####
+#### Alternative Options               ####
 ###########################################
 
 #### Load in GE program data ####
@@ -720,6 +732,7 @@ ge <- read_excel(
   )==FALSE, 
   (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
 ) 
+
 ge.level.category <- data.frame(
   "cred_lvl" = c(
     "UG Certificates", 
@@ -762,6 +775,80 @@ ge <- ge %>% mutate(`Distance status` = ifelse(
   "Not an online program", 
   `Distance status`
 ))
+
+#### End #### 
+
+#### Import Scorecard for LEP ####
+
+importCSI <- read.csv(
+  "Most-Recent-Cohorts-Field-of-Study_04172025.csv", header=TRUE, check.names=FALSE
+) %>% select(
+  `OPEID6`,             # 6-digit OPE ID for institution	
+  `CIPCODE`,            # Classification of Instructional Programs (CIP) code for the field of study	
+  `CREDDESC`,           # Level of credential	
+  # `EARN_COUNT_WNE_4YR`, # Number of graduates working and not enrolled 4 year after completing	
+  `EARN_MDN_4YR`        # Median earnings of graduates working and not enrolled 4 years after completing
+) %>% mutate(
+  # `EARN_COUNT_WNE_4YR` = as.numeric(`EARN_COUNT_WNE_4YR`)
+  `EARN_MDN_4YR` = as.numeric(`EARN_MDN_4YR`) 
+) %>% mutate(
+  `EARN_MDN_4YR` = `EARN_MDN_4YR` / (1 + (0.009860818 / 2)) # Inflation: see methods doc 
+) %>% filter(
+  # is.na(`EARN_COUNT_WNE_4YR`)==FALSE,
+  is.na(`EARN_MDN_4YR`)==FALSE
+) %>% rename(
+  `opeid6` = `OPEID6`, 
+  `cip4` = `CIPCODE`,
+  `creddesc` = `CREDDESC`, 
+  `LEP earnings` = `EARN_MDN_4YR`
+) %>% mutate(
+  `Unique ID` = paste(
+    `opeid6`, 
+    `cip4`, 
+    `creddesc`, 
+    sep="..."
+  )
+) %>% filter(
+  duplicated(`Unique ID`)==FALSE
+) %>% select(
+  -(`Unique ID`)
+)
+
+importLevels <- data.frame(
+  "cred_lvl" = c(
+    "UG Certificates", 
+    "Associate's", 
+    "Bachelor's",
+    "Post-BA Certs",
+    "Grad Certs", 
+    "Master's", 
+    "Professional",
+    "Doctoral"
+  ), "creddesc" = c(
+    "Undergraduate Certificate or Diploma", 
+    "Associate's Degree", 
+    "Bachelor's Degree", 
+    "Post-baccalaureate Certificate", 
+    "Graduate/Professional Certificate", 
+    "Master's Degree", 
+    "First Professional Degree", 
+    "Doctoral Degree"
+  )
+)
+
+importCSI <- left_join(
+  x=importCSI, 
+  y=importLevels, 
+  by="creddesc"
+) %>% select(-(`creddesc`))
+rm(importLevels)
+
+ge <- left_join(
+  x=ge, 
+  y=importCSI, 
+  by=c("opeid6", "cip4", "cred_lvl")
+)
+rm(importCSI)
 
 #### End #### 
 
@@ -888,10 +975,10 @@ ge <- ge %>% mutate(
   )
 ) %>% mutate(
   `passfailLEP` = ifelse(
-    is.na(`mdearnp3`),
+    is.na(`LEP earnings`),
     "No LEP data", 
     ifelse(
-      `mdearnp3` >= `LEP threshold`, 
+      `LEP earnings` >= `LEP threshold`, 
       "Pass LEP", 
       "Fail LEP"
     )
@@ -909,6 +996,96 @@ ge <- ge %>% mutate(
     `cred_lvl`, 
     sep="..."
   )
+)
+
+#### End #### 
+
+#### Check for LEP validity ####
+
+ge <- ge %>% mutate(
+  `Count` = rep(1)
+)
+
+# Preston Cooper July 2025 analysis 
+agg1 <- aggregate(
+  data=ge, 
+  cbind(`Count`, `count_AY1617`) ~ `control_peps` + `cred_lvl` + `passfailLEP` + `inLEP`, 
+  FUN=sum
+) %>% filter(
+  `inLEP`==1
+) %>% select(
+  -(`inLEP`)
+) %>% filter(
+  `cred_lvl` != "Post-BA Certs"
+)
+
+agg1A <- agg1 %>% pivot_wider(
+  id_cols=c(`control_peps`, `cred_lvl`), 
+  names_from=`passfailLEP`,
+  values_from=`Count`
+)
+agg1A[is.na(agg1A)] <- 0 
+agg1A <- agg1A %>% mutate(
+  `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
+) %>% mutate(
+  `control_peps` = factor(`control_peps`, levels=c(
+    "Public", 
+    "Private, Nonprofit", 
+    "Proprietary"
+  )), 
+  `cred_lvl` = factor(`cred_lvl`, levels=c(
+    "Associate's", 
+    "Bachelor's",
+    "Master's", 
+    "Doctoral",
+    "Professional"
+  ))
+)
+
+agg1B <- agg1 %>% pivot_wider(
+  id_cols=c(`control_peps`, `cred_lvl`), 
+  names_from=`passfailLEP`,
+  values_from=`count_AY1617`
+)
+agg1B[is.na(agg1B)] <- 0 
+agg1B <- agg1B %>% mutate(
+  `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
+)  %>% mutate(
+  `control_peps` = factor(`control_peps`, levels=c(
+    "Public", 
+    "Private, Nonprofit", 
+    "Proprietary"
+  )), 
+  `cred_lvl` = factor(`cred_lvl`, levels=c(
+    "Associate's", 
+    "Bachelor's",
+    "Master's", 
+    "Doctoral",
+    "Professional"
+  ))
+)
+
+ggplot(
+  data=agg1A, 
+  mapping=aes(
+    x=`cred_lvl`,
+    y=`Share passing`, 
+    fill=`control_peps`
+  )
+) + geom_bar(
+  stat="identity", 
+  position = "dodge2"
+)
+ggplot(
+  data=agg1B, 
+  mapping=aes(
+    x=`cred_lvl`,
+    y=`Share passing`, 
+    fill=`control_peps`
+  )
+) + geom_bar(
+  stat="identity", 
+  position = "dodge2"
 )
 
 #### End #### 
@@ -955,16 +1132,19 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
   failingPrograms <- gedata %>% filter(
     (`Prog ID` %in% passingPrograms$`Prog ID`)==FALSE
   )
+  
   if((lepSelection=="Y") & (geSelection=="Y")){
     failingPrograms <- failingPrograms %>% filter(
       (`passfailLEP`=="Fail LEP") | (`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only"))
     )
   }
+  
   if((lepSelection=="Y") & (geSelection=="N")){
     failingPrograms <- failingPrograms %>% filter(
       `passfailLEP`=="Fail LEP"
     )
   }
+  
   if((lepSelection=="N") & (geSelection=="Y")){
     failingPrograms <- failingPrograms %>% filter(
       `passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")
@@ -994,123 +1174,137 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
     
     print(paste("Trying number ", i, " of ", nrow(failingPrograms), " failing programs in ", runName, " at ", Sys.time(), ".", sep=""))
     
-    #### Create alternativePrograms, filter by state #### 
+    #### Create alternativePrograms, filter by online status and state #### 
     
     alternativePrograms <- passingPrograms %>% mutate(`Distance` = rep(NA))
     
-    if(failingPrograms$`stabbr`[i]=="AL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AL", "MS", "TN", "GA", "FL"))}
-    
-    if(failingPrograms$`stabbr`[i]=="AK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AK"))}
-    
-    if(failingPrograms$`stabbr`[i]=="AZ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AZ", "CA", "NV", "UT", "CO", "NM"))}
-    
-    if(failingPrograms$`stabbr`[i]=="AR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AR", "MO", "TN", "MS", "LA", "TX", "OK"))}
-    
-    if(failingPrograms$`stabbr`[i]=="CA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CA", "AZ", "NV", "OR"))}
-    
-    if(failingPrograms$`stabbr`[i]=="CO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CO", "WY", "NE", "KS", "OK", "NM", "AZ", "UT"))}
-    
-    if(failingPrograms$`stabbr`[i]=="CT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CT", "RI", "MA", "NY", "NJ"))}
-    
-    if(failingPrograms$`stabbr`[i]=="DE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DE", "NJ", "MD", "PA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="DC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DC", "MD", "VA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="FL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("FL", "GA", "MS", "AL"))}
-    
-    if(failingPrograms$`stabbr`[i]=="GA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GA", "FL", "AL", "TN", "SC", "NC"))}
-    
-    if(failingPrograms$`stabbr`[i]=="HI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("HI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="ID"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ID", "WA", "OR", "NV", "UT", "WY", "MT"))}
-    
-    if(failingPrograms$`stabbr`[i]=="IL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IL", "WI", "IA", "MO", "KY", "IN", "MI", "TN"))}
-    
-    if(failingPrograms$`stabbr`[i]=="IN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IN", "MI", "OH", "KY", "IL", "WI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="IA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IA", "SD", "NE", "MO", "KS", "IL", "WI", "MN"))}
-    
-    if(failingPrograms$`stabbr`[i]=="KS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KS", "NE", "CO", "OK", "MO", "IA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="KY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KY", "IL", "IN", "OH", "WV", "VA", "TN", "MO"))}
-    
-    if(failingPrograms$`stabbr`[i]=="LA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("LA", "MS", "AR", "TX"))}
-    
-    if(failingPrograms$`stabbr`[i]=="ME"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ME", "NH", "MA", "VT"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MD", "DC", "VA", "WV", "PA", "DE", "NJ"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MA", "ME", "NH", "VT", "NY", "CT", "RI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MI", "WI", "IL", "IN", "OH"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MN", "ND", "SD", "IA", "WI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MS", "AL", "TN", "FL", "AR", "LA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MO", "IA", "NE", "KS", "OK", "AR", "TN", "KY", "IL"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MT", "ID", "WY", "ND", "SD"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NE", "SD", "WY", "CO", "KS", "MO", "IA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NV", "ID", "OR", "CA", "AZ", "UT"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NH", "ME", "VT", "MA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NJ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NJ", "NY", "CT", "PA", "DE", "MD"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NM", "TX", "OK", "CO", "UT", "AZ"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NY", "CT", "MA", "VT", "PA", "NJ"))}
-    
-    if(failingPrograms$`stabbr`[i]=="NC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NC", "VA", "TN", "GA", "SC"))}
-    
-    if(failingPrograms$`stabbr`[i]=="ND"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ND", "MT", "SD", "MN"))}
-    
-    if(failingPrograms$`stabbr`[i]=="OH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OH", "MI", "IN", "KY", "WV", "MD", "PA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="OK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OK", "KS", "CO", "NM", "TX", "AR", "MO"))}
-    
-    if(failingPrograms$`stabbr`[i]=="OR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OR", "WA", "CA", "NV", "ID"))}
-    
-    if(failingPrograms$`stabbr`[i]=="PA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PA", "NY", "NJ", "DE", "MD", "WV", "OH"))}
-    
-    if(failingPrograms$`stabbr`[i]=="RI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("RI", "CT", "MA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="SC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SC", "NC", "GA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="SD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SD", "ND", "MT", "WY", "NE", "IA", "MN"))}
-    
-    if(failingPrograms$`stabbr`[i]=="TN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TN", "KY", "MO", "AR", "MS", "AL", "GA", "NC", "VA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="TX"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TX", "NM", "OK", "AR", "LA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="UT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UT", "WY", "ID", "NV", "AZ", "NM", "CO"))}
-    
-    if(failingPrograms$`stabbr`[i]=="VT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VT", "ME", "NH", "NY", "CT", "MA", "RI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="VA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VA", "MD", "DC", "WV", "KY", "TN", "NC"))}
-    
-    if(failingPrograms$`stabbr`[i]=="WA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WA", "OR", "ID"))}
-    
-    if(failingPrograms$`stabbr`[i]=="WV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WV", "PA", "OH", "KY", "MD", "VA"))}
-    
-    if(failingPrograms$`stabbr`[i]=="WI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WI", "MN", "IA", "IL", "IN", "MI"))}
-    
-    if(failingPrograms$`stabbr`[i]=="WY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WY", "MT", "ID", "UT", "CO", "NE", "SD"))}
-    
-    if(failingPrograms$`stabbr`[i]=="AS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AS"))}
-    
-    if(failingPrograms$`stabbr`[i]=="GU"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GU"))}
-    
-    if(failingPrograms$`stabbr`[i]=="MP"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MP"))}
-    
-    if(failingPrograms$`stabbr`[i]=="PR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PR"))}
-    
-    if(failingPrograms$`stabbr`[i]=="UM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UM"))}
-    
-    if(failingPrograms$`stabbr`[i]=="VI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VI"))}
+    if(failingPrograms$`Distance status`[i]=="Online program"){
+      
+      alternativePrograms <- alternativePrograms %>% filter(
+        `Distance status`=="Online program"
+      )
+      
+    }else{
+      
+      alternativePrograms <- alternativePrograms %>% filter(
+        `Distance status`=="Not an online program"
+      )
+      
+      if(failingPrograms$`stabbr`[i]=="AL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AL", "MS", "TN", "GA", "FL"))}
+      
+      if(failingPrograms$`stabbr`[i]=="AK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AK"))}
+      
+      if(failingPrograms$`stabbr`[i]=="AZ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AZ", "CA", "NV", "UT", "CO", "NM"))}
+      
+      if(failingPrograms$`stabbr`[i]=="AR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AR", "MO", "TN", "MS", "LA", "TX", "OK"))}
+      
+      if(failingPrograms$`stabbr`[i]=="CA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CA", "AZ", "NV", "OR"))}
+      
+      if(failingPrograms$`stabbr`[i]=="CO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CO", "WY", "NE", "KS", "OK", "NM", "AZ", "UT"))}
+      
+      if(failingPrograms$`stabbr`[i]=="CT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("CT", "RI", "MA", "NY", "NJ"))}
+      
+      if(failingPrograms$`stabbr`[i]=="DE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DE", "NJ", "MD", "PA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="DC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("DC", "MD", "VA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="FL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("FL", "GA", "MS", "AL"))}
+      
+      if(failingPrograms$`stabbr`[i]=="GA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GA", "FL", "AL", "TN", "SC", "NC"))}
+      
+      if(failingPrograms$`stabbr`[i]=="HI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("HI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="ID"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ID", "WA", "OR", "NV", "UT", "WY", "MT"))}
+      
+      if(failingPrograms$`stabbr`[i]=="IL"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IL", "WI", "IA", "MO", "KY", "IN", "MI", "TN"))}
+      
+      if(failingPrograms$`stabbr`[i]=="IN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IN", "MI", "OH", "KY", "IL", "WI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="IA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("IA", "SD", "NE", "MO", "KS", "IL", "WI", "MN"))}
+      
+      if(failingPrograms$`stabbr`[i]=="KS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KS", "NE", "CO", "OK", "MO", "IA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="KY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("KY", "IL", "IN", "OH", "WV", "VA", "TN", "MO"))}
+      
+      if(failingPrograms$`stabbr`[i]=="LA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("LA", "MS", "AR", "TX"))}
+      
+      if(failingPrograms$`stabbr`[i]=="ME"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ME", "NH", "MA", "VT"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MD", "DC", "VA", "WV", "PA", "DE", "NJ"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MA", "ME", "NH", "VT", "NY", "CT", "RI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MI", "WI", "IL", "IN", "OH"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MN", "ND", "SD", "IA", "WI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MS", "AL", "TN", "FL", "AR", "LA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MO"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MO", "IA", "NE", "KS", "OK", "AR", "TN", "KY", "IL"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MT", "ID", "WY", "ND", "SD"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NE"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NE", "SD", "WY", "CO", "KS", "MO", "IA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NV", "ID", "OR", "CA", "AZ", "UT"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NH", "ME", "VT", "MA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NJ"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NJ", "NY", "CT", "PA", "DE", "MD"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NM", "TX", "OK", "CO", "UT", "AZ"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NY", "CT", "MA", "VT", "PA", "NJ"))}
+      
+      if(failingPrograms$`stabbr`[i]=="NC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("NC", "VA", "TN", "GA", "SC"))}
+      
+      if(failingPrograms$`stabbr`[i]=="ND"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("ND", "MT", "SD", "MN"))}
+      
+      if(failingPrograms$`stabbr`[i]=="OH"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OH", "MI", "IN", "KY", "WV", "MD", "PA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="OK"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OK", "KS", "CO", "NM", "TX", "AR", "MO"))}
+      
+      if(failingPrograms$`stabbr`[i]=="OR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("OR", "WA", "CA", "NV", "ID"))}
+      
+      if(failingPrograms$`stabbr`[i]=="PA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PA", "NY", "NJ", "DE", "MD", "WV", "OH"))}
+      
+      if(failingPrograms$`stabbr`[i]=="RI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("RI", "CT", "MA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="SC"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SC", "NC", "GA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="SD"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("SD", "ND", "MT", "WY", "NE", "IA", "MN"))}
+      
+      if(failingPrograms$`stabbr`[i]=="TN"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TN", "KY", "MO", "AR", "MS", "AL", "GA", "NC", "VA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="TX"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("TX", "NM", "OK", "AR", "LA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="UT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UT", "WY", "ID", "NV", "AZ", "NM", "CO"))}
+      
+      if(failingPrograms$`stabbr`[i]=="VT"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VT", "ME", "NH", "NY", "CT", "MA", "RI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="VA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VA", "MD", "DC", "WV", "KY", "TN", "NC"))}
+      
+      if(failingPrograms$`stabbr`[i]=="WA"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WA", "OR", "ID"))}
+      
+      if(failingPrograms$`stabbr`[i]=="WV"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WV", "PA", "OH", "KY", "MD", "VA"))}
+      
+      if(failingPrograms$`stabbr`[i]=="WI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WI", "MN", "IA", "IL", "IN", "MI"))}
+      
+      if(failingPrograms$`stabbr`[i]=="WY"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("WY", "MT", "ID", "UT", "CO", "NE", "SD"))}
+      
+      if(failingPrograms$`stabbr`[i]=="AS"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("AS"))}
+      
+      if(failingPrograms$`stabbr`[i]=="GU"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("GU"))}
+      
+      if(failingPrograms$`stabbr`[i]=="MP"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("MP"))}
+      
+      if(failingPrograms$`stabbr`[i]=="PR"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("PR"))}
+      
+      if(failingPrograms$`stabbr`[i]=="UM"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("UM"))}
+      
+      if(failingPrograms$`stabbr`[i]=="VI"){alternativePrograms <- alternativePrograms %>% filter(`stabbr` %in% c("VI"))}
+      
+    }
     
     #### End #### 
     
@@ -1121,7 +1315,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
     program.2digCIP <- failingPrograms$`cip2`[i]
     program.4digCIP <- failingPrograms$`cip4`[i]
     
-    # Apply the proper level filter to gepassdata
+    # Apply the proper level filter to alternativePrograms
     if(levelSelection=="Same credential level"){
       alternativePrograms <- alternativePrograms %>% filter(
         `cred_lvl` == program.level
@@ -1133,7 +1327,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
       )
     }
     
-    # Apply the proper CIP code filter to gepassdata
+    # Apply the proper CIP code filter to alternativePrograms
     if(cipSelection=="Same 4-digit CIP"){
       alternativePrograms <- alternativePrograms %>% filter(
         `cip4`==program.4digCIP
@@ -1214,46 +1408,83 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
 
 #### Run distance function: Full data only ####
 
-setFullEarningsData <- TRUE 
-setFullDebtData <- TRUE 
+setFullEarningsData <- TRUE
+setFullDebtData <- TRUE
 ge.YYL4.FDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="Y", 
-  geSelection="Y", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
+  gedata=ge,
+  lepSelection="Y",
+  geSelection="Y",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
   runName="ge.YYL4.FDO"
 )
 ge.YNL4.FDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="Y", 
-  geSelection="N", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
+  gedata=ge,
+  lepSelection="Y",
+  geSelection="N",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
   runName="ge.YNL4.FDO"
 )
 ge.NYL4.FDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="N", 
-  geSelection="Y", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
+  gedata=ge,
+  lepSelection="N",
+  geSelection="Y",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
   runName="ge.NYL4.FDO"
 )
 
-#### End #### 
+#### End ####
 
-#### Run distance function: Not limited to full data #### 
+#### Run distance function: Not limited to full data ####
 
-setFullEarningsData <- FALSE 
-setFullDebtData <- FALSE 
+setFullEarningsData <- FALSE
+setFullDebtData <- FALSE
 ge.YYL4.NL <- calc_dist(
+  gedata=ge,
+  lepSelection="Y",
+  geSelection="Y",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
+  runName="ge.YYL4.NL"
+)
+ge.YNL4.NL <- calc_dist(
+  gedata=ge,
+  lepSelection="Y",
+  geSelection="N",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
+  runName="ge.YNL4.NL"
+)
+ge.NYL4.NL <- calc_dist(
+  gedata=ge,
+  lepSelection="N",
+  geSelection="Y",
+  levelSelection="Same credential level",
+  cipSelection="Same 4-digit CIP",
+  fullEarningsData=setFullEarningsData,
+  fullDebtData=setFullDebtData,
+  runName="ge.NYL4.NL"
+)
+
+#### End ####
+
+#### Run distance function: Full earnings data only ####
+
+setFullEarningsData <- TRUE 
+setFullDebtData <- FALSE 
+ge.YYL4.FEDO <- calc_dist(
   gedata=ge, 
   lepSelection="Y", 
   geSelection="Y", 
@@ -1261,9 +1492,9 @@ ge.YYL4.NL <- calc_dist(
   cipSelection="Same 4-digit CIP", 
   fullEarningsData=setFullEarningsData, 
   fullDebtData=setFullDebtData, 
-  runName="ge.YYL4.NL"
+  runName="ge.YYL4.FEDO"
 )
-ge.YNL4.NL <- calc_dist(
+ge.YNL4.FEDO <- calc_dist(
   gedata=ge, 
   lepSelection="Y", 
   geSelection="N", 
@@ -1271,9 +1502,9 @@ ge.YNL4.NL <- calc_dist(
   cipSelection="Same 4-digit CIP", 
   fullEarningsData=setFullEarningsData, 
   fullDebtData=setFullDebtData, 
-  runName="ge.YNL4.NL"
+  runName="ge.YNL4.FEDO"
 )
-ge.NYL4.NL <- calc_dist(
+ge.NYL4.FEDO <- calc_dist(
   gedata=ge, 
   lepSelection="N", 
   geSelection="Y", 
@@ -1281,7 +1512,7 @@ ge.NYL4.NL <- calc_dist(
   cipSelection="Same 4-digit CIP", 
   fullEarningsData=setFullEarningsData, 
   fullDebtData=setFullDebtData, 
-  runName="ge.NYL4.NL"
+  runName="ge.NYL4.FEDO"
 )
 
 #### End #### 
@@ -1294,6 +1525,9 @@ write_xlsx(ge.NYL4.FDO, "ge-NYL4-FDO.xlsx")
 write_xlsx(ge.YYL4.NL, "ge-YYL4-NL.xlsx")
 write_xlsx(ge.YNL4.NL, "ge-YNL4-NL.xlsx")
 write_xlsx(ge.NYL4.NL, "ge-NYL4-NL.xlsx")
+write_xlsx(ge.YYL4.FEDO, "ge-YYL4-FEDO.xlsx")
+write_xlsx(ge.YNL4.FEDO, "ge-YNL4-FEDO.xlsx")
+write_xlsx(ge.NYL4.FEDO, "ge-NYL4-FEDO.xlsx")
 
 #### End #### 
 
@@ -1329,6 +1563,21 @@ ge.NYL4.NL <- list(
   passingPrograms = read_excel(path="ge-NYL4-NL.xlsx", sheet="Sheet2", col_names=TRUE)
 ) 
 
+ge.YYL4.FEDO <- list(
+  failingPrograms = read_excel(path="ge-YYL4-FEDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YYL4-FEDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.YNL4.FEDO <- list(
+  failingPrograms = read_excel(path="ge-YNL4-FEDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-YNL4-FEDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
+ge.NYL4.FEDO <- list(
+  failingPrograms = read_excel(path="ge-NYL4-FEDO.xlsx", sheet="Sheet1", col_names=TRUE),
+  passingPrograms = read_excel(path="ge-NYL4-FEDO.xlsx", sheet="Sheet2", col_names=TRUE)
+) 
+
 #### End #### 
 
 analyzeSimulation <- function(
@@ -1352,31 +1601,45 @@ analyzeSimulation <- function(
   
   #### End #### 
   
+  #### Set "Distance to nearest alternative" to numeric ####
+  
+  geFailing <- geFailing %>% mutate(
+    `Distance to nearest alternative` = as.numeric(`Distance to nearest alternative`)
+  )
+
+  #### End #### 
+  
   #### Program totals #### 
   
   # Total failing programs (loss of T-IV aid)
   V1 <- nrow(geFailing)
+  V1a <- sum(geFailing$`count_AY1617`, na.rm=TRUE)
   
   # Total passing programs (keeps T-IV aid)
   V2 <- nrow(gePassing)
+  V2a <- sum(gePassing$`count_AY1617`, na.rm=TRUE)
   
   # Total programs with insufficient data (keeps T-IV aid by default or gets combined with other programs)
   V3 <- nrow(geFull) - (nrow(geFailing) + nrow(gePassing))
+  V3a <- sum(geFull$`count_AY1617`, na.rm=TRUE) - (V1a + V2a)
   
-  # Share of students in failing programs
+  # Share of programs that are failing 
   V4 <- nrow(geFailing) / nrow(geFull)
+  V4a <- V1a / sum(geFull$`count_AY1617`, na.rm=TRUE)
   
-  # Share of students in passing programs
+  # Share of programs that are passing
   V5 <- nrow(gePassing) / nrow(geFull)
+  V5a <- V2a / sum(geFull$`count_AY1617`, na.rm=TRUE)
   
-  # Share of students in programs with insufficient data
+  # Share of programs with insufficient data
   V6 <- (nrow(geFull) - (nrow(geFailing) + nrow(gePassing))) / nrow(geFull)
+  V6a <- V3a / sum(geFull$`count_AY1617`, na.rm=TRUE)
   
   #### End #### 
   
   #### Distance to nearest program ####
   
-  # Share of students with no alternative program within 30 miles
+  # Share of programs no alternative within 30 miles
   geFailing <- geFailing %>% mutate(
     `No option within less than 30 miles` = ifelse(
       (`Distance to nearest alternative` > 30) | (is.na(`Distance to nearest alternative`)) | (is.infinite(`Distance to nearest alternative`)),
@@ -1385,6 +1648,10 @@ analyzeSimulation <- function(
     )
   )
   V7 <- sum(geFailing$`No option within less than 30 miles`) / nrow(geFailing)
+  V7a <- geFailing %>% filter(
+    `No option within less than 30 miles`==1
+  )
+  V7a <- sum(V7a$`count_AY1617`, na.rm=TRUE)
   
   # Average distance in miles to nearest alternative program (<30 miles)
   geFailing <- geFailing %>% mutate(
@@ -1395,6 +1662,10 @@ analyzeSimulation <- function(
     )
   )
   V8 <- mean(geFailing$`Distance (within 30 miles)`, na.rm=TRUE)
+  V8a <- geFailing %>% summarize(
+    `Average distance` = weighted.mean(x=`Distance (within 30 miles)`, w=`count_AY1617`, na.rm=TRUE)
+  )
+  V8a <- V8a$`Average distance`[1]
   
   #### End #### 
   
@@ -1511,13 +1782,21 @@ analyzeSimulation <- function(
     `Simulation name` = c(simulationName), 
     `Certificates only` = c(certsOnly),
     `Total failing programs (loss of T-IV aid)` = c(V1), 
+    `Total students in failing programs` = c(V1a),
     `Total passing programs (keeps T-IV aid)` = c(V2),
+    `Total students in passing programs` = c(V2a),
     `Total programs with insufficient data` = c(V3), 
-    `Share of students in failing programs` = c(V4), 
-    `Share of students in passing programs` = c(V5), 
-    `Share of students in programs with insufficient data` = c(V6), 
-    `Share of students with no alternative program within 30 miles` = c(V7), 
-    `Average distance in miles to nearest alternative program (<30 miles)` = c(V8),
+    `Total students in programs with insufficient data` = c(V3a),
+    `Share of programs that are failing` = c(V4), 
+    `Share of students in programs that are failing` = c(V4a),
+    `Share of programs that are passing` = c(V5), 
+    `Share of students in programs that are passing` = c(V5a),
+    `Share of programs with insufficient data` = c(V6), 
+    `Share of students in programs with insufficient data` = c(V6a),
+    `Share of programs with no program within 30 miles` = c(V7), 
+    `Total students in programs with no program within 30 miles` = c(V7a), 
+    `Average program's distance in miles to nearest alternative program (<30 miles)` = c(V8),
+    `Average student's distance in miles to nearest alternative program (<30 miles)` = c(V8a),
     `Average earnings 3 years after completion, pre-transfer: All Title IV recipients` = c(V9), 
     `Average earnings 3 years after completion, post-transfer: All Title IV recipients` = c(V10), 
     `Absolute ($) increase in earnings: All Title IV students` = c(V11), 
@@ -1533,13 +1812,21 @@ analyzeSimulation <- function(
   rm(
     returnDF, 
     V1,
+    V1a,
     V2,
+    V2a,
     V3,
+    V3a,
     V4,
+    V4a,
     V5,
+    V5a,
     V6,
+    V6a,
     V7,
+    V7a,
     V8,
+    V8a,
     V9,
     V10, 
     V11,
@@ -1562,252 +1849,390 @@ analyzeSimulation <- function(
   
 }
 
+#### Run results #### 
+
 resultsOverall <- rbind(
   analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=FALSE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=FALSE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=FALSE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=FALSE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=FALSE)
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FEDO, simulationName="ge.NYL4.FEDO", certsOnly=FALSE)
 )
+
 resultsCerts <- rbind(
   analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=TRUE), 
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=TRUE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=TRUE), 
   analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=TRUE), 
   # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=TRUE)
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=TRUE), 
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FEDO, simulationName="ge.NYL4.FEDO", certsOnly=TRUE)
 )
+
+#### End #### 
+
+#### Save results files #### 
 
 write.csv(resultsOverall, "Results overall 10-07-2025.csv", row.names=FALSE)
 write.csv(resultsCerts, "Results certs-only 10-07-2025.csv", row.names=FALSE)
 
+#### End #### 
+
 ###########################################
-#### Improvements to earnings from GE  ####
+#### D/E versus Loan Caps              ####
 ###########################################
 
-#### Load GE data ####
+#### Load GE programs ####
 
-ge <- read_excel(
+geDebt <- read_excel(
   path="nprm-2022ppd-public-suppressed.xlsx", 
   col_names=TRUE
-) %>% filter(
-  (`control_peps` %in% c(
-    "Foreign For-Profit", 
-    "Foreign Private"
-  ))==FALSE
 ) %>% select(
   `schname`, 
   `inGE`, 
   `opeid6`, 
-  `cip4`,
+  `stabbr`, 
+  `zip`,
+  `control_peps`,
+  `cip4`, 
+  `cipdesc`, 
+  `cip2`, 
+  `cip2_title_2010`, 
   `cred_lvl`, 
-  `control_peps`, 
-  `st_fips`, 
-  `earn_count_ne_3yr`, 
-  `mdearnp3`, 
-  `debtservicenpp_md`,
-  `meandebt`,
-  `mdincearn_lf`, 
-  `EP_lf_2019`,
   `passfail_2019`, 
-  `count_AY1617`
+  `mdearnp3`,
+  `mediandebt`,
+  `debtservicenpp_md`,
+  `count_AY1617`, 
+  `pell_vol_2016`,
+  `pell_vol_2017`,
+  `pell_vol_2018`,
+  `pell_vol_2019`,
+  `pell_vol_2020`,
+  `pell_vol_2021`,
+  `pell_vol_2022`, 
+  `tot_loan_vol2016`,
+  `tot_loan_vol2017`,
+  `tot_loan_vol2018`,
+  `tot_loan_vol2019`,
+  `tot_loan_vol2020`,
+  `tot_loan_vol2021`,
+  `tot_loan_vol2022`
+) %>% filter(
+  (`control_peps` %in% c(
+    "Foreign For-Profit", 
+    "Foreign Private")
+  )==FALSE, 
+  (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
+) %>% mutate(
+  `Prog ID` = paste(
+    `opeid6`, 
+    `cip4`, 
+    `cred_lvl`, 
+    sep="..."
+  )
+) %>% mutate(
+  `Fail DTE` = ifelse(
+    `passfail_2019` %in% c("Fail DTE only", "Fail both DTE and EP"), 
+    "Fail DTE", 
+    "Does not fail DTE"
+  ), 
+  `Fail GE` = ifelse(
+    `passfail_2019` %in% c("Fail DTE only", "Fail both DTE and EP", "Fail EP only"), 
+    "Fail GE", 
+    "Does not fail GE"
+  )
+) %>% mutate(
+  `CIP-CRED` = paste(`cip4`, `cred_lvl`, sep="...")
+) %>% mutate(
+  `Count` = rep(1)
 )
 
 #### End #### 
 
-#### Merge in info for simulation #### 
+#### Import LEP information #### 
 
-ge.fail.A_record <- read.csv(
-  "ge.fail.A_record.csv", 
-  header=TRUE
+importLEP <- ge %>% select(
+  `Prog ID`, 
+  `passfailLEP`
+)
+geDebt <- left_join(x=geDebt, y=importLEP, by="Prog ID")
+rm(importLEP)
+
+gePell <- geDebt
+
+#### End #### 
+
+#### Programs that fail DTE but pass LEP ####
+
+geDebt <- geDebt %>% mutate(
+  `Debt-income ratio` = `mediandebt` / `mdearnp3`
 )
 
-# Remove programs where there was no alternative 
-ge.fail.A_record <- ge.fail.A_record %>% filter(
-  is.na(`alt_opeid6`)==FALSE
+failDTEpassLEP <- geDebt %>% filter(
+  `Fail DTE` == "Fail DTE",
+  `passfailLEP` %in% c("No LEP data", "Pass LEP")
+) 
+
+median(geDebt$`Debt-income ratio`, na.rm=TRUE)
+median(failDTEpassLEP$`Debt-income ratio`, na.rm=TRUE)
+
+failDTEpassLEP2 <- failDTEpassLEP %>% filter(
+  `passfailLEP` == "Pass LEP", 
+  `inGE` == 1
+) 
+
+#### End #### 
+
+###########################################
+#### Ignore here; old                  ####
+###########################################
+
+# #### Adjust amounts to current dollars to compare with loan limits ####
+# 
+# # January 2017 to September 2025
+# geDebt <- geDebt %>% mutate(
+#   `mediandebt` = `mediandebt` * 1.33751168
+# )
+# 
+# # September 2019 to September 2025
+# geDebt <- geDebt %>% mutate(
+#   `mdearnp3` = `mdearnp3` * 1.26499947
+# )
+# 
+# #### End ####
+# 
+# #### Assign to professional and non-professional #### 
+# 
+# professionalPrograms <- data.frame(
+#   `CIPCODE` = numeric(),
+#   `CREDLEV` = character()
+# ) 
+# 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2201, `CREDLEV`="Professional") # JD programs (law)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3906, `CREDLEV`="Master's") # MDiv programs (theology)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5112, `CREDLEV`="Professional") # MD programs (medicine)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5120, `CREDLEV`="Professional") # PharmD programs (pharmacy)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5104, `CREDLEV`="Professional") # DDS, DMD programs (dentistry)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5117, `CREDLEV`="Professional") # DO programs (optometry)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2299, `CREDLEV`="Master's") # Legal professions master's 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5101, `CREDLEV`="Professional") # DC, DCM programs (chiropractic)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3999, `CREDLEV`="Master's") # Religious vocations 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=180,  `CREDLEV`="Professional") # DVM programs (veterinary)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5120, `CREDLEV`="Doctoral") # PharmD programs (pharmacy)
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3999, `CREDLEV`="Doctoral") # Religious vocations 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2299, `CREDLEV`="Professional") # Legal professions first professional 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3906, `CREDLEV`="Professional") # Theological and ministerial studies 
+# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=4228, `CREDLEV`="Professional") # Clinical Psychology 
+# 
+# professionalPrograms <- professionalPrograms %>% mutate(
+#   `CIP-CRED` = paste(`CIPCODE`, `CREDLEV`, sep="...")
+# )
+# 
+# #### End #### 
+# 
+# #### Assign loan limit #### 
+# 
+# geDebt <- geDebt %>% mutate(
+#   `Loan limit` = ifelse(
+#     `Category`=="Undergraduate", 
+#     ifelse(
+#       `cred_lvl`=="Bachelor's", 
+#       45000, # 9500 + 10500 + 12500 + 12500 for bachelor's 
+#       20000  # 9500 + 10500 for all other undergraduate levels 
+#     ),  
+#     ifelse(
+#       `CIP-CRED` %in% professionalPrograms$`CIP-CRED`, 
+#       200000,
+#       100000
+#     )
+#   )
+# )
+# 
+# rm(professionalPrograms)
+# 
+# #### End #### 
+# 
+# #### Over or under loan limit ####
+# 
+# geDebt <- geDebt %>% mutate(
+#   `Ratio: Debt to Loan Limit` = `mediandebt` / `Loan limit`, 
+#   `Over or under loan limit` = ifelse(
+#     `Ratio: Debt to Loan Limit` >= 1, 
+#     "Over", 
+#     "Under"
+#   ), 
+#   `Over or under 50% of loan limit` = ifelse(
+#     `Ratio: Debt to Loan Limit` >= (1/2), 
+#     "Over", 
+#     "Under"
+#   ), 
+#   `Over or under 33% of loan limit` = ifelse(
+#     `Ratio: Debt to Loan Limit` >= (1/3), 
+#     "Over", 
+#     "Under"
+#   )
+# )
+# 
+# #### End #### 
+# 
+# #### Counting numbers ####
+# 
+# agg1 <- aggregate(
+#   data=`geDebt`, 
+#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under loan limit`, 
+#   FUN=sum
+# )
+# 
+# agg05 <- aggregate(
+#   data=`geDebt`, 
+#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under 50% of loan limit`, 
+#   FUN=sum
+# )
+# 
+# agg033 <- aggregate(
+#   data=`geDebt`, 
+#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under 33% of loan limit`, 
+#   FUN=sum
+# )
+# 
+# #### End #### 
+# 
+# #### Save files for Excel ####
+# 
+# write.csv(agg1, "output-1.csv", row.names=FALSE)
+# write.csv(agg05, "output-05.csv", row.names=FALSE)
+# write.csv(agg033, "output-033.csv", row.names=FALSE)
+# 
+# #### End #### 
+
+###########################################
+#### Pell Grants: programs failing LEP ####
+###########################################
+
+#### Sum Pell numbers ####
+
+gePell <- gePell %>% mutate(
+  `pell_vol_2016` = ifelse(is.na(`pell_vol_2016`), 0, `pell_vol_2016`),
+  `pell_vol_2017` = ifelse(is.na(`pell_vol_2017`), 0, `pell_vol_2017`),
+  `pell_vol_2018` = ifelse(is.na(`pell_vol_2018`), 0, `pell_vol_2018`),
+  `pell_vol_2019` = ifelse(is.na(`pell_vol_2019`), 0, `pell_vol_2019`),
+  `pell_vol_2020` = ifelse(is.na(`pell_vol_2020`), 0, `pell_vol_2020`),
+  `pell_vol_2021` = ifelse(is.na(`pell_vol_2021`), 0, `pell_vol_2021`),
+  `pell_vol_2022` = ifelse(is.na(`pell_vol_2022`), 0, `pell_vol_2022`),
+  `tot_loan_vol2016` = ifelse(is.na(`tot_loan_vol2016`), 0, `tot_loan_vol2016`),
+  `tot_loan_vol2017` = ifelse(is.na(`tot_loan_vol2017`), 0, `tot_loan_vol2017`),
+  `tot_loan_vol2018` = ifelse(is.na(`tot_loan_vol2018`), 0, `tot_loan_vol2018`),
+  `tot_loan_vol2019` = ifelse(is.na(`tot_loan_vol2019`), 0, `tot_loan_vol2019`),
+  `tot_loan_vol2020` = ifelse(is.na(`tot_loan_vol2020`), 0, `tot_loan_vol2020`),
+  `tot_loan_vol2021` = ifelse(is.na(`tot_loan_vol2021`), 0, `tot_loan_vol2021`),
+  `tot_loan_vol2022` = ifelse(is.na(`tot_loan_vol2022`), 0, `tot_loan_vol2022`)
+) %>% mutate(
+  `pell_vol` = `pell_vol_2016` + `pell_vol_2017` + `pell_vol_2018` + `pell_vol_2019` + `pell_vol_2020` + `pell_vol_2021` + `pell_vol_2022`, 
+  `tot_loan_vol` = `tot_loan_vol2016` + `tot_loan_vol2017` + `tot_loan_vol2018` + `tot_loan_vol2019` + `tot_loan_vol2020` + `tot_loan_vol2021` + `tot_loan_vol2022`
+) %>% mutate(
+  `More loans or more Pell` = ifelse(
+    `tot_loan_vol` > `pell_vol`, 
+    "More loans", 
+    "More Pell"
+  )
 )
 
-# Create a unique identifier for each program: 
-ge.fail.A_record <- ge.fail.A_record %>% mutate(
-  `Prog_ID` = paste(`alt_opeid6`, `alt_cip4`, `alt_cred_lvl`, sep="-")
-)
+#### End #### 
 
-# Keep in only the essentials 
-ge.transfers <- ge.fail.A_record %>% select(
-  `Prog_ID`, 
-  `count_AY1617`
-) %>% rename(
-  `TransferStudents` = `count_AY1617`
-)
-ge.transfers <- aggregate(
-  data=ge.transfers, 
-  `TransferStudents` ~ `Prog_ID`, 
+#### Aggregate counting numbers ####
+
+agg2 <- aggregate(
+  data=gePell, 
+  cbind(
+    `Count`, 
+    `pell_vol`, 
+    `tot_loan_vol`
+  ) ~ `Fail LEP` + `Fail GE`, 
   FUN=sum
 )
 
+write.csv(agg2, "output-2.csv", row.names=FALSE)
+
 #### End #### 
 
-#### Filter for programs with sufficient data for evaluation ####
+#### Programs with more Pell than loans ####
 
-ge <- ge %>% filter(
-  `passfail_2019` != "No DTE/EP data",
-  is.na(`count_AY1617`)==FALSE
+agg3 <- aggregate(
+  data=gePell, 
+  `Count` ~ `Fail LEP` + `Fail GE` + `More loans or more Pell`, 
+  FUN=sum
 )
 
-#### End #### 
-
-#### Run function for states #### 
-
-states <- unique(ge$st_fips)[1:51]
-
-for(i in (1:length(states))){
-  if(i==1){
-    statesData <- data.frame(
-      `State` = states,
-      `X1` = rep(NA, length(states)), 
-      `X2` = rep(NA, length(states)), 
-      `X3` = rep(NA, length(states)), 
-      `X4` = rep(NA, length(states))
-    )
-    names(statesData) <- c("State", 
-                           "Average earnings in state (all programs)", 
-                           "Average earnings in state (passing programs)", 
-                           "Average annual debt servicing in state (all programs)", 
-                           "Average annual debt servicing in state (passing programs)")
-  }
-  
-  ge.all <- ge %>% filter(`st_fips`==states[i])
-  ge.passing <- ge.all %>% filter(`passfail_2019`=="Pass")
-  
-  # Here, we load in the data on transfers: 
-  ge.passing <- ge.passing %>% mutate(`Prog_ID` = paste(`opeid6`, `cip4`, `cred_lvl`, sep="-"))
-  ge.passing <- left_join(x=ge.passing, y=ge.transfers, by="Prog_ID")
-  ge.passing$`TransferStudents`[is.na(ge.passing$`TransferStudents`)] <- 0
-  ge.passing <- ge.passing %>% mutate(`count_AY1617` = `count_AY1617` + `TransferStudents`)
-  
-  statesData$`Average earnings in state (all programs)`[i] <- weighted.mean(ge.all$`mdearnp3`, w = ge.all$`count_AY1617`)
-  statesData$`Average earnings in state (passing programs)`[i] <- weighted.mean(ge.passing$`mdearnp3`, w = ge.passing$`count_AY1617`)
-  
-  # At this stage, we filter out programs without debt data. 
-  ge.all <- ge.all %>% filter(is.na(`debtservicenpp_md`)==FALSE)
-  ge.passing <- ge.passing %>% filter(is.na(`debtservicenpp_md`)==FALSE)
-  
-  statesData$`Average annual debt servicing in state (all programs)`[i] <- weighted.mean(ge.all$`debtservicenpp_md`, w = ge.all$`count_AY1617`)
-  statesData$`Average annual debt servicing in state (passing programs)`[i] <- weighted.mean(ge.passing$`debtservicenpp_md`, w = ge.passing$`count_AY1617`)
-}
-
-# Adding in the nationwide numbers
-ge.all <- ge
-ge.passing <- ge.all %>% filter(`passfail_2019`=="Pass")
-ge.passing <- ge.passing %>% mutate(`Prog_ID` = paste(`opeid6`, `cip4`, `cred_lvl`, sep="-"))
-ge.passing <- left_join(x=ge.passing, y=ge.transfers, by="Prog_ID")
-ge.passing$`TransferStudents`[is.na(ge.passing$`TransferStudents`)] <- 0
-ge.passing <- ge.passing %>% mutate(`count_AY1617` = `count_AY1617` + `TransferStudents`)
-statesData <- statesData %>% add_row(
-  `State` = "U.S. Overall", 
-  `Average earnings in state (all programs)` = weighted.mean(ge.all$`mdearnp3`, w = ge.all$`count_AY1617`, na.rm=TRUE),
-  `Average earnings in state (passing programs)` = weighted.mean(ge.passing$`mdearnp3`, w = ge.passing$`count_AY1617`, na.rm=TRUE), 
-  `Average annual debt servicing in state (all programs)` = weighted.mean(ge.all$`debtservicenpp_md`, w = ge.all$`count_AY1617`, na.rm=TRUE), 
-  `Average annual debt servicing in state (passing programs)` = weighted.mean(ge.passing$`debtservicenpp_md`, w = ge.passing$`count_AY1617`, na.rm=TRUE)
-)
-
-# Calculating annual D/E rate 
-statesData <- statesData %>% mutate(`Aggregate annual D/E rate (all programs)` = `Average annual debt servicing in state (all programs)` / `Average earnings in state (all programs)`)
-statesData <- statesData %>% mutate(`Aggregate annual D/E rate (passing programs)` = `Average annual debt servicing in state (passing programs)` / `Average earnings in state (passing programs)`)
-
-statesData <- statesData %>% mutate(`Aggregate discretionary D/E rate (all programs)` = `Average annual debt servicing in state (all programs)` / (`Average earnings in state (all programs)` - 18735))
-statesData <- statesData %>% mutate(`Aggregate discretionary D/E rate (passing programs)` = `Average annual debt servicing in state (passing programs)` / (`Average earnings in state (passing programs)` - 18735))
+write.csv(agg3, "output-3.csv", row.names=FALSE)
 
 #### End #### 
 
-#### Earnings gain chart ####
+###########################################
+#### GE Proportions                    ####
+###########################################
 
-plot1 <- statesData %>% select(`State`, `Average earnings in state (all programs)`, `Average earnings in state (passing programs)`)
-
-plot1 <- plot1 %>% filter(`State` != "District of Columbia")
-
-plot1A <- plot1 %>% pivot_longer(cols=c(`Average earnings in state (all programs)`, `Average earnings in state (passing programs)`), names_to="Program category", values_to="Average earnings in state")
-plot1A$`Program category`[plot1A$`Program category`=="Average earnings in state (all programs)"] <- "Pre-GE status quo"
-plot1A$`Program category`[plot1A$`Program category`=="Average earnings in state (passing programs)"] <- "Post-GE simulation"
-
-ggplot(data=plot1A, mapping=aes(y=reorder(`State`, `Average earnings in state`, max), x=`Average earnings in state`, color=`Program category`, group=`State`)) + geom_point(aes(size=`Program category`)) + geom_line() + scale_x_continuous(labels=scales::dollar_format(accuracy=1)) + labs(y="State", x="Annual earnings among program graduates") + scale_color_manual(values=c("firebrick3", "gray23"), name="") + scale_size_manual(values=c(2.5, 1), name="")
-
-#### End #### 
-
-#### Earnings gain chart: Plotly ####
-names(plot1) <- c("State", "Pre-GE", "Post-GE")
-
-plot1$`State` <- factor(plot1$`State`, levels=plot1$`State`[order(plot1$`Post-GE`)])
-
-plot1$`Pre-GE Text` <- paste(plot1$`State`, " Pre-GE: ", dollar(plot1$`Pre-GE`, accuracy=1), sep="")
-plot1$`Post-GE Text` <- paste(plot1$`State`, " Post-GE: ", dollar(plot1$`Post-GE`, accuracy=1), sep="")
-
-earnings.fig <- plot_ly(plot1, color = I("gray80"), width=900, height=900)
-earnings.fig <- earnings.fig %>% add_segments(x = ~`Pre-GE`, xend = ~`Post-GE`, y = ~`State`, yend = ~`State`, showlegend = FALSE, hoverinfo = 'skip')
-earnings.fig <- earnings.fig %>% add_markers(x = ~`Pre-GE`, y = ~`State`, name = "Pre-GE", color = I("gray23"), text = ~`Pre-GE Text`, hoverinfo = "text")
-earnings.fig <- earnings.fig %>% add_markers(x = ~`Post-GE`, y = ~`State`, name = "Post-GE", color = I("firebrick3"), text = ~`Post-GE Text`, hoverinfo = "text")
-earnings.fig <- earnings.fig %>% layout(
-  title = "Enacting the GE rules increases program completers’ typical annual earnings <br> in every state, and by more than $5,000 in several states.",
-  xaxis = list(title = "Annual earnings among program graduates", tickformat='$,d'),
-  yaxis = list(title = ""),
-  margin = list(l = 65), 
-  hovermode = "y unified"
-)
-earnings.fig
-api_create(earnings.fig, filename = "earnings-09232023")
-
-#### End #### 
-
-#### D/E Annual Ratio Chart ####
-
-# Option 1: Discretionary D/E rate 
-# plot2 <- statesData %>% select(`State`, `Aggregate discretionary D/E rate (all programs)`, `Aggregate discretionary D/E rate (passing programs)`)
-# plot2 <- plot2 %>% pivot_longer(cols=c(`Aggregate discretionary D/E rate (all programs)`, `Aggregate discretionary D/E rate (passing programs)`), names_to="Program category", values_to="Aggregate discretionary D/E rate")
-# plot2$`Program category`[plot2$`Program category`=="Aggregate discretionary D/E rate (all programs)"] <- "Pre-GE status quo"
-# plot2$`Program category`[plot2$`Program category`=="Aggregate discretionary D/E rate (passing programs)"] <- "Post-GE simulation"
-# ggplot(data=plot2, mapping=aes(y=reorder(`State`, `Aggregate discretionary D/E rate`, min), x=`Aggregate discretionary D/E rate`, color=`Program category`, group=`State`)) + geom_point(aes(size=`Program category`)) + geom_line() + scale_x_continuous(labels=scales::percent_format(accuracy=1)) + labs(y="State", x="Discretionary D/E rate among program graduates") + scale_color_manual(values=c("dodgerblue", "gray23"), name="") + scale_size_manual(values=c(2.5, 1), name="")
-
-# Option 2: Annual D/E rate
-plot2 <- statesData %>% select(`State`, `Aggregate annual D/E rate (all programs)`, `Aggregate annual D/E rate (passing programs)`)
-
-plot2A <- plot2 %>% pivot_longer(cols=c(`Aggregate annual D/E rate (all programs)`, `Aggregate annual D/E rate (passing programs)`), names_to="Program category", values_to="Aggregate annual D/E rate")
-plot2A$`Program category`[plot2A$`Program category`=="Aggregate annual D/E rate (all programs)"] <- "Pre-GE status quo"
-plot2A$`Program category`[plot2A$`Program category`=="Aggregate annual D/E rate (passing programs)"] <- "Post-GE simulation"
-ggplot(data=plot2A, mapping=aes(y=reorder(`State`, `Aggregate annual D/E rate`, min), x=`Aggregate annual D/E rate`, color=`Program category`, group=`State`)) + geom_point(aes(size=`Program category`)) + geom_line() + scale_x_continuous(labels=scales::percent_format(accuracy=1)) + labs(y="State", x="Annual D/E rate among program graduates") + scale_color_manual(values=c("dodgerblue", "gray23"), name="") + scale_size_manual(values=c(2.5, 1), name="")
-
-# Option 3: Dollar amounts of debt payment
-# plot2 <- statesData %>% select(`State`, `Average annual debt servicing in state (all programs)`, `Average annual debt servicing in state (passing programs)`) %>% filter(State != "District of Columbia")
-# plot2 <- plot2 %>% pivot_longer(cols=c(`Average annual debt servicing in state (all programs)`, `Average annual debt servicing in state (passing programs)`), names_to="Program category", values_to="Average annual debt servicing in state")
-# plot2$`Program category`[plot2$`Program category`=="Average annual debt servicing in state (all programs)"] <- "Pre-GE status quo"
-# plot2$`Program category`[plot2$`Program category`=="Average annual debt servicing in state (passing programs)"] <- "Post-GE simulation"
-# ggplot(data=plot2, mapping=aes(y=reorder(`State`, `Average annual debt servicing in state`, min), x=`Average annual debt servicing in state`, color=`Program category`, group=`State`)) + geom_point(aes(size=`Program category`)) + geom_line() + scale_x_continuous(labels=scales::dollar_format(accuracy=1)) + labs(y="State", x="Annual loan among program graduates") + scale_color_manual(values=c("dodgerblue", "gray23"), name="") + scale_size_manual(values=c(2.5, 1), name="") 
+# #### Load GE data #### 
+# 
+# ge <- read_excel(
+#   path="nprm-2022ppd-public-suppressed.xlsx", 
+#   col_names=TRUE
+# ) %>% select(
+#   `schname`, 
+#   `inGE`, 
+#   `opeid6`, 
+#   `stabbr`, 
+#   `zip`,
+#   `control_peps`,
+#   `cip4`, 
+#   `cipdesc`, 
+#   `cip2`, 
+#   `cip2_title_2010`, 
+#   `cred_lvl`, 
+#   `passfail_2019`
+# ) %>% filter(
+#   (`control_peps` %in% c(
+#     "Foreign For-Profit", 
+#     "Foreign Private")
+#   )==FALSE, 
+#   (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
+# ) 
+# 
+# #### End #### 
+# 
+# #### Count by institution ####
+# 
+# ge <- ge %>% mutate(
+#   `Count` = rep(1)
+# ) %>% mutate(
+#   `passfail_2019` = ifelse(
+#     `inGE` == 0, 
+#     "Not subject to GE", 
+#     `passfail_2019`
+#   )
+# )
+# 
+# agg1 <- aggregate(
+#   data=ge, 
+#   `Count` ~ `opeid6` + `passfail_2019`, 
+#   FUN=sum
+# ) %>% pivot_wider(
+#   id_cols=c(`opeid6`),
+#   names_from=`passfail_2019`, 
+#   values_from=`Count`
+# )
+# 
+# agg1[is.na(agg1)] <- 0
+# 
+# #### End #### 
 
 
-#### End #### 
 
-#### D/E Annual Ratio chart: Plotly ####
-names(plot2) <- c("State", "Pre-GE", "Post-GE")
-
-plot2$`State` <- factor(plot2$`State`, levels=plot2$`State`[order(plot2$`Post-GE`)])
-
-plot2$`Pre-GE Text` <- paste(plot2$`State`, " Pre-GE: ", percent(plot2$`Pre-GE`, accuracy=0.01), sep="")
-plot2$`Post-GE Text` <- paste(plot2$`State`, " Post-GE: ", percent(plot2$`Post-GE`, accuracy=0.01), sep="")
-
-debt.fig <- plot_ly(plot2, color = I("gray80"), width=900, height=900)
-debt.fig <- debt.fig %>% add_segments(x = ~`Pre-GE`, xend = ~`Post-GE`, y = ~`State`, yend = ~`State`, showlegend = FALSE, hoverinfo = 'skip')
-debt.fig <- debt.fig %>% add_markers(x = ~`Pre-GE`, y = ~`State`, name = "Pre-GE", color = I("gray23"), text = ~`Pre-GE Text`, hoverinfo = "text")
-debt.fig <- debt.fig %>% add_markers(x = ~`Post-GE`, y = ~`State`, name = "Post-GE", color = I("dodgerblue"), text = ~`Post-GE Text`, hoverinfo = "text")
-debt.fig <- debt.fig %>% layout(
-  title = "Removing the worst-performing programs from the student loan program <br> makes monthly debt payments more manageable <br> by lowering total debt and improving earnings.",
-  xaxis = list(title = "Annual D/E rate among program graduates", tickformat='1%'),
-  yaxis = list(title = ""),
-  margin = list(l = 65), 
-  hovermode = "y unified"
-)
-debt.fig
-api_create(debt.fig, filename = "debt-09232023")
-
-#### End #### 
 
 
