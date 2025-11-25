@@ -409,8 +409,8 @@ efState <- efState %>% add_row(`EFCSTATE`=98, `STABBR` = "Residence not reported
 
 #### Load data ####
 
-ef2023c <- read.csv(
-  "ef2023c.csv", header=TRUE
+ef2022c <- read.csv(
+  "ef2022c_rv.csv", header=TRUE
 ) %>% select(
   `UNITID`,   # Unique identification number of the institution
   `EFCSTATE`, # State of residence when student was first admitted
@@ -424,15 +424,15 @@ ef2023c <- read.csv(
     98  # Residence not reported
   ))==FALSE
 )
-ef2023c <- left_join(
-  x=ef2023c, y=efState, by="EFCSTATE"
+ef2022c <- left_join(
+  x=ef2022c, y=efState, by="EFCSTATE"
 ) %>% rename(
   `Student state` = `STABBR`
 )
 rm(efState)
 
 hd <- read.csv(
-  "hd2023.csv", header=TRUE
+  "hd2022.csv", header=TRUE
 ) %>% select(
   `UNITID`,
   `OPEID`,
@@ -460,21 +460,21 @@ hd <- read.csv(
 ) %>% mutate(
   `OPEID6` = substr(`OPEID8`, 1, 6)
 )
-ef2023c <- left_join(x=ef2023c, y=hd, by="UNITID")
+ef2022c <- left_join(x=ef2022c, y=hd, by="UNITID")
 rm(hd)
 
 #### End #### 
 
 #### Find whether each institution gets 50+% of its students from within its same state ####
 
-ef2023c <- ef2023c %>% mutate(
+ef2022c <- ef2022c %>% mutate(
   `Student state` = ifelse(
     `Student state` == `Institution state`, "In-state", "Out-of-state"
   )
 )
 
 inStateShares <- aggregate(
-  data=ef2023c, 
+  data=ef2022c, 
   `EFRES01` ~ `OPEID6` + `Student state`, 
   FUN=sum
 ) %>% pivot_wider(
@@ -493,12 +493,12 @@ inStateShares <- aggregate(
 ) %>% select(
   -(`In-state`), -(`Out-of-state`)
 )
-rm(ef2023c)
+rm(ef2022c)
 
 #### End #### 
 
 ###########################################
-#### Data on online enrollment         ####
+#### Data on online programs           ####
 ###########################################
 
 #### Loading HD data and creating OPEID6 variable ####
@@ -724,7 +724,28 @@ ge <- read_excel(
   `passfail_2019`, 
   `mdearnp3`,
   `mediandebt`,
-  `count_AY1617`
+  `count_AY1617`, 
+  `t4enrl2016`,
+  `t4enrl2017`,
+  `t4enrl2018`,
+  `t4enrl2019`,
+  `t4enrl2020`,
+  `t4enrl2021`,
+  `t4enrl2022`,
+  `pell_vol_2016`,
+  `pell_vol_2017`,
+  `pell_vol_2018`,
+  `pell_vol_2019`,
+  `pell_vol_2020`,
+  `pell_vol_2021`,
+  `pell_vol_2022`, 
+  `tot_loan_vol2016`,
+  `tot_loan_vol2017`,
+  `tot_loan_vol2018`,
+  `tot_loan_vol2019`,
+  `tot_loan_vol2020`,
+  `tot_loan_vol2021`,
+  `tot_loan_vol2022`
 ) %>% filter(
   (`control_peps` %in% c(
     "Foreign For-Profit", 
@@ -863,6 +884,15 @@ inStateShares <-inStateShares %>% rename(
 )
 ge <- left_join(x=ge, y=inStateShares, by="opeid6")
 
+# If a classification isn't found, say it's majority in-state 
+ge <- ge %>% mutate(
+  `Classification` = ifelse(
+    is.na(`Classification`), 
+    "Majority in-state", 
+    `Classification`
+  )
+)
+
 highschoolThresholds1 <- highschoolThresholds %>% filter(
   `State` != "U.S."
 ) %>% rename(
@@ -1000,95 +1030,111 @@ ge <- ge %>% mutate(
 
 #### End #### 
 
-#### Check for LEP validity ####
+#### Total undergraduate certificates failing GE ####
 
-ge <- ge %>% mutate(
-  `Count` = rep(1)
-)
+UGcert <- ge %>% filter(`cred_lvl`=="UG Certificates")
+sum(UGcert$`t4enrl2022`, na.rm=TRUE)
 
-# Preston Cooper July 2025 analysis 
-agg1 <- aggregate(
-  data=ge, 
-  cbind(`Count`, `count_AY1617`) ~ `control_peps` + `cred_lvl` + `passfailLEP` + `inLEP`, 
-  FUN=sum
-) %>% filter(
-  `inLEP`==1
-) %>% select(
-  -(`inLEP`)
-) %>% filter(
-  `cred_lvl` != "Post-BA Certs"
+UGcertFailGE <- ge %>% filter(
+  `passfail_2019` %in% c(
+    "Fail both DTE and EP", "Fail DTE only", "Fail EP only"), 
+  `cred_lvl`=="UG Certificates"
 )
+nrow(UGcertFailGE)
 
-agg1A <- agg1 %>% pivot_wider(
-  id_cols=c(`control_peps`, `cred_lvl`), 
-  names_from=`passfailLEP`,
-  values_from=`Count`
-)
-agg1A[is.na(agg1A)] <- 0 
-agg1A <- agg1A %>% mutate(
-  `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
-) %>% mutate(
-  `control_peps` = factor(`control_peps`, levels=c(
-    "Public", 
-    "Private, Nonprofit", 
-    "Proprietary"
-  )), 
-  `cred_lvl` = factor(`cred_lvl`, levels=c(
-    "Associate's", 
-    "Bachelor's",
-    "Master's", 
-    "Doctoral",
-    "Professional"
-  ))
-)
-
-agg1B <- agg1 %>% pivot_wider(
-  id_cols=c(`control_peps`, `cred_lvl`), 
-  names_from=`passfailLEP`,
-  values_from=`count_AY1617`
-)
-agg1B[is.na(agg1B)] <- 0 
-agg1B <- agg1B %>% mutate(
-  `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
-)  %>% mutate(
-  `control_peps` = factor(`control_peps`, levels=c(
-    "Public", 
-    "Private, Nonprofit", 
-    "Proprietary"
-  )), 
-  `cred_lvl` = factor(`cred_lvl`, levels=c(
-    "Associate's", 
-    "Bachelor's",
-    "Master's", 
-    "Doctoral",
-    "Professional"
-  ))
-)
-
-ggplot(
-  data=agg1A, 
-  mapping=aes(
-    x=`cred_lvl`,
-    y=`Share passing`, 
-    fill=`control_peps`
-  )
-) + geom_bar(
-  stat="identity", 
-  position = "dodge2"
-)
-ggplot(
-  data=agg1B, 
-  mapping=aes(
-    x=`cred_lvl`,
-    y=`Share passing`, 
-    fill=`control_peps`
-  )
-) + geom_bar(
-  stat="identity", 
-  position = "dodge2"
-)
+sum(UGcertFailGE$`t4enrl2022`, na.rm=TRUE) / sum(UGcert$`t4enrl2022`, na.rm=TRUE)
 
 #### End #### 
+
+# #### Check for LEP validity ####
+# 
+# ge <- ge %>% mutate(
+#   `Count` = rep(1)
+# )
+# 
+# # Preston Cooper July 2025 analysis 
+# agg1 <- aggregate(
+#   data=ge, 
+#   cbind(`Count`, `count_AY1617`) ~ `control_peps` + `cred_lvl` + `passfailLEP` + `inLEP`, 
+#   FUN=sum
+# ) %>% filter(
+#   `inLEP`==1
+# ) %>% select(
+#   -(`inLEP`)
+# ) %>% filter(
+#   `cred_lvl` != "Post-BA Certs"
+# )
+# 
+# agg1A <- agg1 %>% pivot_wider(
+#   id_cols=c(`control_peps`, `cred_lvl`), 
+#   names_from=`passfailLEP`,
+#   values_from=`Count`
+# )
+# agg1A[is.na(agg1A)] <- 0 
+# agg1A <- agg1A %>% mutate(
+#   `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
+# ) %>% mutate(
+#   `control_peps` = factor(`control_peps`, levels=c(
+#     "Public", 
+#     "Private, Nonprofit", 
+#     "Proprietary"
+#   )), 
+#   `cred_lvl` = factor(`cred_lvl`, levels=c(
+#     "Associate's", 
+#     "Bachelor's",
+#     "Master's", 
+#     "Doctoral",
+#     "Professional"
+#   ))
+# )
+# 
+# agg1B <- agg1 %>% pivot_wider(
+#   id_cols=c(`control_peps`, `cred_lvl`), 
+#   names_from=`passfailLEP`,
+#   values_from=`count_AY1617`
+# )
+# agg1B[is.na(agg1B)] <- 0 
+# agg1B <- agg1B %>% mutate(
+#   `Share passing` = `Pass LEP` / (`Pass LEP` + `Fail LEP`)
+# )  %>% mutate(
+#   `control_peps` = factor(`control_peps`, levels=c(
+#     "Public", 
+#     "Private, Nonprofit", 
+#     "Proprietary"
+#   )), 
+#   `cred_lvl` = factor(`cred_lvl`, levels=c(
+#     "Associate's", 
+#     "Bachelor's",
+#     "Master's", 
+#     "Doctoral",
+#     "Professional"
+#   ))
+# )
+# 
+# ggplot(
+#   data=agg1A, 
+#   mapping=aes(
+#     x=`cred_lvl`,
+#     y=`Share passing`, 
+#     fill=`control_peps`
+#   )
+# ) + geom_bar(
+#   stat="identity", 
+#   position = "dodge2"
+# )
+# ggplot(
+#   data=agg1B, 
+#   mapping=aes(
+#     x=`cred_lvl`,
+#     y=`Share passing`, 
+#     fill=`control_peps`
+#   )
+# ) + geom_bar(
+#   stat="identity", 
+#   position = "dodge2"
+# )
+# 
+# #### End #### 
 
 calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSelection, fullEarningsData, fullDebtData, runName){
   
@@ -1135,19 +1181,19 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
   
   if((lepSelection=="Y") & (geSelection=="Y")){
     failingPrograms <- failingPrograms %>% filter(
-      (`passfailLEP`=="Fail LEP") | (`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only"))
+      ((`passfailLEP`=="Fail LEP") & (`inLEP`==1)) | ((`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")) & (`inGE`==1))
     )
   }
   
   if((lepSelection=="Y") & (geSelection=="N")){
     failingPrograms <- failingPrograms %>% filter(
-      `passfailLEP`=="Fail LEP"
+      ((`passfailLEP`=="Fail LEP") & (`inLEP`==1))
     )
   }
   
   if((lepSelection=="N") & (geSelection=="Y")){
     failingPrograms <- failingPrograms %>% filter(
-      `passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")
+      ((`passfail_2019` %in% c("Fail both DTE and EP", "Fail DTE only", "Fail EP only")) & (`inGE`==1))
     )
   }
   
@@ -1406,130 +1452,130 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
   return(list(failingPrograms, passingPrograms))
 }
 
-#### Run distance function: Full data only ####
-
-setFullEarningsData <- TRUE
-setFullDebtData <- TRUE
-ge.YYL4.FDO <- calc_dist(
-  gedata=ge,
-  lepSelection="Y",
-  geSelection="Y",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.YYL4.FDO"
-)
-ge.YNL4.FDO <- calc_dist(
-  gedata=ge,
-  lepSelection="Y",
-  geSelection="N",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.YNL4.FDO"
-)
-ge.NYL4.FDO <- calc_dist(
-  gedata=ge,
-  lepSelection="N",
-  geSelection="Y",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.NYL4.FDO"
-)
-
-#### End ####
-
-#### Run distance function: Not limited to full data ####
-
-setFullEarningsData <- FALSE
-setFullDebtData <- FALSE
-ge.YYL4.NL <- calc_dist(
-  gedata=ge,
-  lepSelection="Y",
-  geSelection="Y",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.YYL4.NL"
-)
-ge.YNL4.NL <- calc_dist(
-  gedata=ge,
-  lepSelection="Y",
-  geSelection="N",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.YNL4.NL"
-)
-ge.NYL4.NL <- calc_dist(
-  gedata=ge,
-  lepSelection="N",
-  geSelection="Y",
-  levelSelection="Same credential level",
-  cipSelection="Same 4-digit CIP",
-  fullEarningsData=setFullEarningsData,
-  fullDebtData=setFullDebtData,
-  runName="ge.NYL4.NL"
-)
-
-#### End ####
-
-#### Run distance function: Full earnings data only ####
-
-setFullEarningsData <- TRUE 
-setFullDebtData <- FALSE 
-ge.YYL4.FEDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="Y", 
-  geSelection="Y", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
-  runName="ge.YYL4.FEDO"
-)
-ge.YNL4.FEDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="Y", 
-  geSelection="N", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
-  runName="ge.YNL4.FEDO"
-)
-ge.NYL4.FEDO <- calc_dist(
-  gedata=ge, 
-  lepSelection="N", 
-  geSelection="Y", 
-  levelSelection="Same credential level", 
-  cipSelection="Same 4-digit CIP", 
-  fullEarningsData=setFullEarningsData, 
-  fullDebtData=setFullDebtData, 
-  runName="ge.NYL4.FEDO"
-)
-
-#### End #### 
-
-#### Save files for future #### 
-
-write_xlsx(ge.YYL4.FDO, "ge-YYL4-FDO.xlsx")
-write_xlsx(ge.YNL4.FDO, "ge-YNL4-FDO.xlsx")
-write_xlsx(ge.NYL4.FDO, "ge-NYL4-FDO.xlsx")
-write_xlsx(ge.YYL4.NL, "ge-YYL4-NL.xlsx")
-write_xlsx(ge.YNL4.NL, "ge-YNL4-NL.xlsx")
-write_xlsx(ge.NYL4.NL, "ge-NYL4-NL.xlsx")
-write_xlsx(ge.YYL4.FEDO, "ge-YYL4-FEDO.xlsx")
-write_xlsx(ge.YNL4.FEDO, "ge-YNL4-FEDO.xlsx")
-write_xlsx(ge.NYL4.FEDO, "ge-NYL4-FEDO.xlsx")
-
-#### End #### 
+# #### Run distance function: Full data only ####
+# 
+# setFullEarningsData <- TRUE
+# setFullDebtData <- TRUE
+# ge.YYL4.FDO <- calc_dist(
+#   gedata=ge,
+#   lepSelection="Y",
+#   geSelection="Y",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.YYL4.FDO"
+# )
+# ge.YNL4.FDO <- calc_dist(
+#   gedata=ge,
+#   lepSelection="Y",
+#   geSelection="N",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.YNL4.FDO"
+# )
+# ge.NYL4.FDO <- calc_dist(
+#   gedata=ge,
+#   lepSelection="N",
+#   geSelection="Y",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.NYL4.FDO"
+# )
+# 
+# #### End ####
+# 
+# #### Run distance function: Not limited to full data ####
+# 
+# setFullEarningsData <- FALSE
+# setFullDebtData <- FALSE
+# ge.YYL4.NL <- calc_dist(
+#   gedata=ge,
+#   lepSelection="Y",
+#   geSelection="Y",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.YYL4.NL"
+# )
+# ge.YNL4.NL <- calc_dist(
+#   gedata=ge,
+#   lepSelection="Y",
+#   geSelection="N",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.YNL4.NL"
+# )
+# ge.NYL4.NL <- calc_dist(
+#   gedata=ge,
+#   lepSelection="N",
+#   geSelection="Y",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.NYL4.NL"
+# )
+# 
+# #### End ####
+# 
+# #### Run distance function: Full earnings data only ####
+# 
+# setFullEarningsData <- TRUE
+# setFullDebtData <- FALSE
+# ge.YYL4.FEDO <- calc_dist(
+#   gedata=ge,
+#   lepSelection="Y",
+#   geSelection="Y",
+#   levelSelection="Same credential level",
+#   cipSelection="Same 4-digit CIP",
+#   fullEarningsData=setFullEarningsData,
+#   fullDebtData=setFullDebtData,
+#   runName="ge.YYL4.FEDO"
+# )
+# ge.YNL4.FEDO <- calc_dist(
+#   gedata=ge, 
+#   lepSelection="Y", 
+#   geSelection="N", 
+#   levelSelection="Same credential level", 
+#   cipSelection="Same 4-digit CIP", 
+#   fullEarningsData=setFullEarningsData, 
+#   fullDebtData=setFullDebtData, 
+#   runName="ge.YNL4.FEDO"
+# )
+# ge.NYL4.FEDO <- calc_dist(
+#   gedata=ge, 
+#   lepSelection="N", 
+#   geSelection="Y", 
+#   levelSelection="Same credential level", 
+#   cipSelection="Same 4-digit CIP", 
+#   fullEarningsData=setFullEarningsData, 
+#   fullDebtData=setFullDebtData, 
+#   runName="ge.NYL4.FEDO"
+# )
+# 
+# #### End #### 
+# 
+# #### Save files for future #### 
+# 
+# write_xlsx(ge.YYL4.FDO, "ge-YYL4-FDO.xlsx")
+# write_xlsx(ge.YNL4.FDO, "ge-YNL4-FDO.xlsx")
+# write_xlsx(ge.NYL4.FDO, "ge-NYL4-FDO.xlsx")
+# write_xlsx(ge.YYL4.NL, "ge-YYL4-NL.xlsx")
+# write_xlsx(ge.YNL4.NL, "ge-YNL4-NL.xlsx")
+# write_xlsx(ge.NYL4.NL, "ge-NYL4-NL.xlsx")
+# write_xlsx(ge.YYL4.FEDO, "ge-YYL4-FEDO.xlsx")
+# write_xlsx(ge.YNL4.FEDO, "ge-YNL4-FEDO.xlsx")
+# write_xlsx(ge.NYL4.FEDO, "ge-NYL4-FEDO.xlsx")
+# 
+# #### End #### 
 
 #### Re-load files ####
 
@@ -1849,38 +1895,49 @@ analyzeSimulation <- function(
   
 }
 
-#### Run results #### 
+#### Run results ####
 
 resultsOverall <- rbind(
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=FALSE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=FALSE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=FALSE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=FALSE),
   analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FEDO, simulationName="ge.NYL4.FEDO", certsOnly=FALSE)
 )
 
 resultsCerts <- rbind(
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=TRUE), 
-  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=TRUE), 
-  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=TRUE), 
-  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=TRUE), 
-  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=TRUE), 
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FDO, simulationName="ge.YYL4.FDO", certsOnly=TRUE),
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FDO, simulationName="ge.YNL4.FDO", certsOnly=TRUE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FDO, simulationName="ge.NYL4.FDO", certsOnly=TRUE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.NL, simulationName="ge.YYL4.NL", certsOnly=TRUE),
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.NL, simulationName="ge.YNL4.NL", certsOnly=TRUE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.NL, simulationName="ge.NYL4.NL", certsOnly=TRUE),
+  analyzeSimulation(geFull0=ge, simulationData=ge.YYL4.FEDO, simulationName="ge.YYL4.FEDO", certsOnly=TRUE),
+  # analyzeSimulation(geFull0=ge, simulationData=ge.YNL4.FEDO, simulationName="ge.YNL4.FEDO", certsOnly=TRUE),
   analyzeSimulation(geFull0=ge, simulationData=ge.NYL4.FEDO, simulationName="ge.NYL4.FEDO", certsOnly=TRUE)
 )
 
-#### End #### 
+#### End ####
 
-#### Save results files #### 
+#### Save results files ####
 
 write.csv(resultsOverall, "Results overall 10-07-2025.csv", row.names=FALSE)
 write.csv(resultsCerts, "Results certs-only 10-07-2025.csv", row.names=FALSE)
+
+#### End ####
+
+#### Yes LEP, Yes GE simulation ####
+
+analyzeSimulation(
+  geFull0=ge,
+  simulationData=ge.YYL4.FEDO,
+  simulationName="ge.YYL4.FEDO",
+  certsOnly=TRUE
+)
 
 #### End #### 
 
@@ -1888,56 +1945,9 @@ write.csv(resultsCerts, "Results certs-only 10-07-2025.csv", row.names=FALSE)
 #### D/E versus Loan Caps              ####
 ###########################################
 
-#### Load GE programs ####
+#### Format GE programs ####
 
-geDebt <- read_excel(
-  path="nprm-2022ppd-public-suppressed.xlsx", 
-  col_names=TRUE
-) %>% select(
-  `schname`, 
-  `inGE`, 
-  `opeid6`, 
-  `stabbr`, 
-  `zip`,
-  `control_peps`,
-  `cip4`, 
-  `cipdesc`, 
-  `cip2`, 
-  `cip2_title_2010`, 
-  `cred_lvl`, 
-  `passfail_2019`, 
-  `mdearnp3`,
-  `mediandebt`,
-  `debtservicenpp_md`,
-  `count_AY1617`, 
-  `pell_vol_2016`,
-  `pell_vol_2017`,
-  `pell_vol_2018`,
-  `pell_vol_2019`,
-  `pell_vol_2020`,
-  `pell_vol_2021`,
-  `pell_vol_2022`, 
-  `tot_loan_vol2016`,
-  `tot_loan_vol2017`,
-  `tot_loan_vol2018`,
-  `tot_loan_vol2019`,
-  `tot_loan_vol2020`,
-  `tot_loan_vol2021`,
-  `tot_loan_vol2022`
-) %>% filter(
-  (`control_peps` %in% c(
-    "Foreign For-Profit", 
-    "Foreign Private")
-  )==FALSE, 
-  (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
-) %>% mutate(
-  `Prog ID` = paste(
-    `opeid6`, 
-    `cip4`, 
-    `cred_lvl`, 
-    sep="..."
-  )
-) %>% mutate(
+ge <- ge %>% mutate(
   `Fail DTE` = ifelse(
     `passfail_2019` %in% c("Fail DTE only", "Fail both DTE and EP"), 
     "Fail DTE", 
@@ -1947,6 +1957,11 @@ geDebt <- read_excel(
     `passfail_2019` %in% c("Fail DTE only", "Fail both DTE and EP", "Fail EP only"), 
     "Fail GE", 
     "Does not fail GE"
+  ), 
+  `Fail LEP` = ifelse(
+    `passfailLEP`=="Fail LEP", 
+    "Fail LEP", 
+    "Does not fail LEP"
   )
 ) %>% mutate(
   `CIP-CRED` = paste(`cip4`, `cred_lvl`, sep="...")
@@ -1956,161 +1971,53 @@ geDebt <- read_excel(
 
 #### End #### 
 
-#### Import LEP information #### 
-
-importLEP <- ge %>% select(
-  `Prog ID`, 
-  `passfailLEP`
-)
-geDebt <- left_join(x=geDebt, y=importLEP, by="Prog ID")
-rm(importLEP)
-
-gePell <- geDebt
-
-#### End #### 
-
 #### Programs that fail DTE but pass LEP ####
 
-geDebt <- geDebt %>% mutate(
+ge <- ge %>% mutate(
   `Debt-income ratio` = `mediandebt` / `mdearnp3`
 )
 
-failDTEpassLEP <- geDebt %>% filter(
+failDTEpassLEP <- ge %>% filter(
   `Fail DTE` == "Fail DTE",
-  `passfailLEP` %in% c("No LEP data", "Pass LEP")
+  `passfailLEP` %in% c("No LEP data", "Pass LEP"), 
+  inGE==1, 
+  inLEP==1
 ) 
 
-median(geDebt$`Debt-income ratio`, na.rm=TRUE)
+median(ge$`Debt-income ratio`, na.rm=TRUE)
 median(failDTEpassLEP$`Debt-income ratio`, na.rm=TRUE)
 
-failDTEpassLEP2 <- failDTEpassLEP %>% filter(
-  `passfailLEP` == "Pass LEP", 
-  `inGE` == 1
-) 
+example1 <- failDTEpassLEP %>% filter(
+  `opeid6`==25042, 
+  `cip4`==4201, 
+  `cred_lvl`=="Doctoral"
+)
+
+example2 <- failDTEpassLEP %>% filter(
+  `opeid6`==2678, 
+  `cip4`==4301, 
+  `cred_lvl`=="Bachelor's"
+)
+
+rm(example1, example2)
+
+nrow(failDTEpassLEP)
+sum(failDTEpassLEP$t4enrl2022, na.rm=TRUE)
+
+failDTEpassLEP <- failDTEpassLEP %>% mutate(
+  `Earnings over $35,000` = ifelse(
+    `mdearnp3` >= 35000, 
+    "Over $35,000", 
+    "Under $35,000"
+  )
+)
+aggregate(
+  data=failDTEpassLEP, 
+  `t4enrl2022` ~ `Earnings over $35,000`, 
+  FUN=sum
+)
 
 #### End #### 
-
-###########################################
-#### Ignore here; old                  ####
-###########################################
-
-# #### Adjust amounts to current dollars to compare with loan limits ####
-# 
-# # January 2017 to September 2025
-# geDebt <- geDebt %>% mutate(
-#   `mediandebt` = `mediandebt` * 1.33751168
-# )
-# 
-# # September 2019 to September 2025
-# geDebt <- geDebt %>% mutate(
-#   `mdearnp3` = `mdearnp3` * 1.26499947
-# )
-# 
-# #### End ####
-# 
-# #### Assign to professional and non-professional #### 
-# 
-# professionalPrograms <- data.frame(
-#   `CIPCODE` = numeric(),
-#   `CREDLEV` = character()
-# ) 
-# 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2201, `CREDLEV`="Professional") # JD programs (law)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3906, `CREDLEV`="Master's") # MDiv programs (theology)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5112, `CREDLEV`="Professional") # MD programs (medicine)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5120, `CREDLEV`="Professional") # PharmD programs (pharmacy)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5104, `CREDLEV`="Professional") # DDS, DMD programs (dentistry)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5117, `CREDLEV`="Professional") # DO programs (optometry)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2299, `CREDLEV`="Master's") # Legal professions master's 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5101, `CREDLEV`="Professional") # DC, DCM programs (chiropractic)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3999, `CREDLEV`="Master's") # Religious vocations 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=180,  `CREDLEV`="Professional") # DVM programs (veterinary)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=5120, `CREDLEV`="Doctoral") # PharmD programs (pharmacy)
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3999, `CREDLEV`="Doctoral") # Religious vocations 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=2299, `CREDLEV`="Professional") # Legal professions first professional 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=3906, `CREDLEV`="Professional") # Theological and ministerial studies 
-# professionalPrograms <- professionalPrograms %>% add_row(`CIPCODE`=4228, `CREDLEV`="Professional") # Clinical Psychology 
-# 
-# professionalPrograms <- professionalPrograms %>% mutate(
-#   `CIP-CRED` = paste(`CIPCODE`, `CREDLEV`, sep="...")
-# )
-# 
-# #### End #### 
-# 
-# #### Assign loan limit #### 
-# 
-# geDebt <- geDebt %>% mutate(
-#   `Loan limit` = ifelse(
-#     `Category`=="Undergraduate", 
-#     ifelse(
-#       `cred_lvl`=="Bachelor's", 
-#       45000, # 9500 + 10500 + 12500 + 12500 for bachelor's 
-#       20000  # 9500 + 10500 for all other undergraduate levels 
-#     ),  
-#     ifelse(
-#       `CIP-CRED` %in% professionalPrograms$`CIP-CRED`, 
-#       200000,
-#       100000
-#     )
-#   )
-# )
-# 
-# rm(professionalPrograms)
-# 
-# #### End #### 
-# 
-# #### Over or under loan limit ####
-# 
-# geDebt <- geDebt %>% mutate(
-#   `Ratio: Debt to Loan Limit` = `mediandebt` / `Loan limit`, 
-#   `Over or under loan limit` = ifelse(
-#     `Ratio: Debt to Loan Limit` >= 1, 
-#     "Over", 
-#     "Under"
-#   ), 
-#   `Over or under 50% of loan limit` = ifelse(
-#     `Ratio: Debt to Loan Limit` >= (1/2), 
-#     "Over", 
-#     "Under"
-#   ), 
-#   `Over or under 33% of loan limit` = ifelse(
-#     `Ratio: Debt to Loan Limit` >= (1/3), 
-#     "Over", 
-#     "Under"
-#   )
-# )
-# 
-# #### End #### 
-# 
-# #### Counting numbers ####
-# 
-# agg1 <- aggregate(
-#   data=`geDebt`, 
-#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under loan limit`, 
-#   FUN=sum
-# )
-# 
-# agg05 <- aggregate(
-#   data=`geDebt`, 
-#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under 50% of loan limit`, 
-#   FUN=sum
-# )
-# 
-# agg033 <- aggregate(
-#   data=`geDebt`, 
-#   cbind(`Count`, `count_AY1617`) ~ `inGE` + `inLEP` + `Fail DTE` + `Fail LEP` + `Over or under 33% of loan limit`, 
-#   FUN=sum
-# )
-# 
-# #### End #### 
-# 
-# #### Save files for Excel ####
-# 
-# write.csv(agg1, "output-1.csv", row.names=FALSE)
-# write.csv(agg05, "output-05.csv", row.names=FALSE)
-# write.csv(agg033, "output-033.csv", row.names=FALSE)
-# 
-# #### End #### 
 
 ###########################################
 #### Pell Grants: programs failing LEP ####
@@ -2118,7 +2025,7 @@ failDTEpassLEP2 <- failDTEpassLEP %>% filter(
 
 #### Sum Pell numbers ####
 
-gePell <- gePell %>% mutate(
+ge <- ge %>% mutate(
   `pell_vol_2016` = ifelse(is.na(`pell_vol_2016`), 0, `pell_vol_2016`),
   `pell_vol_2017` = ifelse(is.na(`pell_vol_2017`), 0, `pell_vol_2017`),
   `pell_vol_2018` = ifelse(is.na(`pell_vol_2018`), 0, `pell_vol_2018`),
@@ -2134,11 +2041,11 @@ gePell <- gePell %>% mutate(
   `tot_loan_vol2021` = ifelse(is.na(`tot_loan_vol2021`), 0, `tot_loan_vol2021`),
   `tot_loan_vol2022` = ifelse(is.na(`tot_loan_vol2022`), 0, `tot_loan_vol2022`)
 ) %>% mutate(
-  `pell_vol` = `pell_vol_2016` + `pell_vol_2017` + `pell_vol_2018` + `pell_vol_2019` + `pell_vol_2020` + `pell_vol_2021` + `pell_vol_2022`, 
-  `tot_loan_vol` = `tot_loan_vol2016` + `tot_loan_vol2017` + `tot_loan_vol2018` + `tot_loan_vol2019` + `tot_loan_vol2020` + `tot_loan_vol2021` + `tot_loan_vol2022`
+  `Annual pell_vol` = (`pell_vol_2016` + `pell_vol_2017` + `pell_vol_2018` + `pell_vol_2019` + `pell_vol_2020` + `pell_vol_2021` + `pell_vol_2022`) / 7, 
+  `Annual tot_loan_vol` = (`tot_loan_vol2016` + `tot_loan_vol2017` + `tot_loan_vol2018` + `tot_loan_vol2019` + `tot_loan_vol2020` + `tot_loan_vol2021` + `tot_loan_vol2022`) / 7
 ) %>% mutate(
   `More loans or more Pell` = ifelse(
-    `tot_loan_vol` > `pell_vol`, 
+    `Annual tot_loan_vol` > `Annual pell_vol`, 
     "More loans", 
     "More Pell"
   )
@@ -2149,13 +2056,42 @@ gePell <- gePell %>% mutate(
 #### Aggregate counting numbers ####
 
 agg2 <- aggregate(
-  data=gePell, 
+  data=ge, 
   cbind(
     `Count`, 
-    `pell_vol`, 
-    `tot_loan_vol`
-  ) ~ `Fail LEP` + `Fail GE`, 
+    `Annual pell_vol`, 
+    `Annual tot_loan_vol`
+  ) ~ `Fail LEP` + `Fail GE` + `inGE`, 
   FUN=sum
+) %>% filter(
+  `Fail GE`=="Fail GE", 
+  `inGE`==1
+) %>% arrange(
+  desc(`Fail LEP`)
+)
+
+agg2A <- aggregate(
+  data=ge, 
+  cbind(
+    `Count`, 
+    `Annual pell_vol`, 
+    `Annual tot_loan_vol`
+  ) ~ `Fail GE` + `inGE`, 
+  FUN=sum
+) %>% filter(
+  `Fail GE`=="Fail GE", 
+  `inGE`==1
+) %>% mutate(
+  `Fail LEP` = rep("Overall (fail GE)")
+)
+agg2 <- rbind(
+  agg2, agg2A
+) %>% mutate(
+  `Pell share of Title IV` = `Annual pell_vol` / (`Annual pell_vol` + `Annual tot_loan_vol`), 
+) %>% mutate(
+  `Annual pell_vol` = dollar(`Annual pell_vol`), 
+  `Annual tot_loan_vol` = dollar(`Annual tot_loan_vol`), 
+  `Pell share of Title IV` = percent(`Pell share of Title IV`)
 )
 
 write.csv(agg2, "output-2.csv", row.names=FALSE)
@@ -2165,74 +2101,135 @@ write.csv(agg2, "output-2.csv", row.names=FALSE)
 #### Programs with more Pell than loans ####
 
 agg3 <- aggregate(
-  data=gePell, 
+  data=ge, 
   `Count` ~ `Fail LEP` + `Fail GE` + `More loans or more Pell`, 
   FUN=sum
+) %>% filter(
+  `Fail LEP`=="Fail LEP", 
+  `Fail GE`=="Fail GE"
 )
 
 write.csv(agg3, "output-3.csv", row.names=FALSE)
 
 #### End #### 
 
+#### Programs that fail LEP ####
+
+agg4 <- aggregate(
+  data=ge, 
+  `Count` ~ `Fail LEP` + `Fail GE` + `inGE`, 
+  FUN=sum
+) %>% filter(
+  `inGE`==1, 
+  `Fail LEP` == "Fail LEP"
+)
+  
+#### End #### 
+
 ###########################################
-#### GE Proportions                    ####
+#### Dentistry programs                ####
 ###########################################
 
-# #### Load GE data #### 
-# 
-# ge <- read_excel(
-#   path="nprm-2022ppd-public-suppressed.xlsx", 
-#   col_names=TRUE
-# ) %>% select(
-#   `schname`, 
-#   `inGE`, 
-#   `opeid6`, 
-#   `stabbr`, 
-#   `zip`,
-#   `control_peps`,
-#   `cip4`, 
-#   `cipdesc`, 
-#   `cip2`, 
-#   `cip2_title_2010`, 
-#   `cred_lvl`, 
-#   `passfail_2019`
-# ) %>% filter(
-#   (`control_peps` %in% c(
-#     "Foreign For-Profit", 
-#     "Foreign Private")
-#   )==FALSE, 
-#   (`stabbr` %in% c("AS", "FM", "GU", "MH", "MP", "PR", "PW", "VI"))==FALSE
-# ) 
-# 
-# #### End #### 
-# 
-# #### Count by institution ####
-# 
-# ge <- ge %>% mutate(
-#   `Count` = rep(1)
-# ) %>% mutate(
-#   `passfail_2019` = ifelse(
-#     `inGE` == 0, 
-#     "Not subject to GE", 
-#     `passfail_2019`
-#   )
-# )
-# 
-# agg1 <- aggregate(
-#   data=ge, 
-#   `Count` ~ `opeid6` + `passfail_2019`, 
-#   FUN=sum
-# ) %>% pivot_wider(
-#   id_cols=c(`opeid6`),
-#   names_from=`passfail_2019`, 
-#   values_from=`Count`
-# )
-# 
-# agg1[is.na(agg1)] <- 0
-# 
-# #### End #### 
+#### Analyze data (Red Zone analysis) ####
 
+csp <- read.csv(
+  "Most-Recent-Cohorts-Field-of-Study_04172025.csv", 
+  header=TRUE
+) %>% select(
+  `UNITID`, 
+  `INSTNM`,
+  `CONTROL`,
+  `OPEID6`,
+  `CIPCODE`, 
+  `CIPDESC`, 
+  `CREDLEV`, 
+  `CREDDESC`, 
+  `IPEDSCOUNT1`, 
+  `IPEDSCOUNT2`,
+  `DEBT_ALL_STGP_EVAL_N`,
+  `DEBT_ALL_STGP_EVAL_MEAN`,
+  `DEBT_ALL_STGP_EVAL_MDN`,
+  `DEBT_PELL_STGP_EVAL_N`,
+  `EARN_MDN_5YR`, 	
+  `EARN_COUNT_WNE_5YR` 
+) %>% mutate(
+  `IPEDSCOUNT1` = ifelse(
+    is.na(`IPEDSCOUNT1`), 0, `IPEDSCOUNT1`
+  ), 
+  `IPEDSCOUNT2` = ifelse(
+    is.na(`IPEDSCOUNT2`), 0, `IPEDSCOUNT2`
+  )
+) %>% mutate(
+  `IPEDSCOUNT` = `IPEDSCOUNT1` + `IPEDSCOUNT2`
+) %>% filter(
+  `CREDLEV` %in% (4:8)
+) %>% mutate(
+  `Unique code` = paste(
+    `OPEID6`, 
+    `CIPCODE`, 
+    `CREDLEV`, 
+    sep="..."
+  )
+) %>% arrange(
+  desc(`IPEDSCOUNT`)
+) %>% filter(
+  duplicated(`Unique code`)==FALSE
+) %>% select(
+  -(`IPEDSCOUNT1`), 
+  -(`IPEDSCOUNT2`)
+) %>% mutate(
+  `Count` = rep(1)
+)
 
+suppressWarnings({
+  csp <- csp %>% mutate(
+    `DEBT_ALL_STGP_EVAL_N` = as.numeric(`DEBT_ALL_STGP_EVAL_N`), 
+    `DEBT_ALL_STGP_EVAL_MDN` = as.numeric(`DEBT_ALL_STGP_EVAL_MDN`), 
+    `EARN_COUNT_WNE_5YR` = as.numeric(`EARN_COUNT_WNE_5YR`), 
+    `EARN_MDN_5YR` = as.numeric(`EARN_MDN_5YR`)
+  )
+})
 
+csp <- csp %>% filter(
+  is.na(`DEBT_ALL_STGP_EVAL_N`) == FALSE, 
+  `DEBT_ALL_STGP_EVAL_N` > 0
+)
+
+dentistDebt <- csp %>% filter(
+  `DEBT_ALL_STGP_EVAL_N` >= 30 
+) %>% filter(
+  `CIPCODE`==5104, # Dentistry 
+  `CREDLEV`==7 # First professional
+) %>% filter(
+  is.na(`DEBT_ALL_STGP_EVAL_MDN`)==FALSE
+) %>% mutate(
+  `Red zone status` = ifelse(
+    `DEBT_ALL_STGP_EVAL_MDN` > (157987), 
+    "Red zone", 
+    "Not in red zone"
+  )
+)
+
+agg5 <- aggregate(
+  data=dentistDebt, 
+  `Count` ~ `Red zone status`,
+  FUN=sum
+)
+
+dentistEarnings <- csp %>% filter(
+  `EARN_COUNT_WNE_5YR` >= 30 
+) %>% filter(
+  `CIPCODE`==5104, # Dentistry 
+  `CREDLEV`==7 # First professional
+) %>% filter(
+  is.na(`EARN_MDN_5YR`)==FALSE
+) 
+
+weighted.mean(
+  x=dentistEarnings$`EARN_MDN_5YR`, 
+  w=dentistEarnings$`EARN_COUNT_WNE_5YR`
+)
+
+#### End #### 
 
 
