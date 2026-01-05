@@ -626,7 +626,7 @@ joiner1 <- data.frame(
     "Post-BA Certs", 
     "Grad Certs", 
     "Grad Certs"
-))
+  ))
 
 joiner2 <- data.frame(
   "Variable"=c(
@@ -652,7 +652,7 @@ joiner2 <- data.frame(
     "PPBACCDE", 
     "PPMAST", 
     "PPMASTDE"
-), "distance"=rep(c("Total", "Distance"), 11))
+  ), "distance"=rep(c("Total", "Distance"), 11))
 
 cdep <- left_join(x=cdep, y=joiner1, by="Variable")
 cdep <- left_join(x=cdep, y=joiner2, by="Variable")
@@ -764,7 +764,7 @@ ge.level.category <- data.frame(
     "Master's", 
     "Professional",
     "Doctoral"
-), "Category" = c(
+  ), "Category" = c(
     "Undergraduate", 
     "Undergraduate", 
     "Undergraduate", 
@@ -773,7 +773,7 @@ ge.level.category <- data.frame(
     "Graduate", 
     "Graduate", 
     "Graduate"
-))
+  ))
 
 ge <- left_join(
   x=ge, 
@@ -813,7 +813,7 @@ importCSI <- read.csv(
   # `EARN_COUNT_WNE_4YR` = as.numeric(`EARN_COUNT_WNE_4YR`)
   `EARN_MDN_4YR` = as.numeric(`EARN_MDN_4YR`) 
 ) %>% mutate(
-  `EARN_MDN_4YR` = `EARN_MDN_4YR` / (1 + (0.009860818 / 2)) # Inflation: see methods doc 
+  `EARN_MDN_4YR` = `EARN_MDN_4YR` / 1.06404465 # Inflation: see methods doc 
 ) %>% filter(
   # is.na(`EARN_COUNT_WNE_4YR`)==FALSE,
   is.na(`EARN_MDN_4YR`)==FALSE
@@ -1399,7 +1399,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
         if((failingPrograms$`Distance status`[i]=="Online program") & (alternativePrograms$`Distance status`[j]=="Online program")){
           alternativePrograms$`Distance`[j] <- 0
           
-        # Otherwise, calculate ZIP distance 
+          # Otherwise, calculate ZIP distance 
         }else{
           alternativePrograms$`Distance`[j] <- zip_distance(
             failingPrograms$`zip`[i], 
@@ -1447,7 +1447,7 @@ calc_dist <- function(gedata, lepSelection, geSelection, levelSelection, cipSele
        "program.4digCIP")
     
     #### End #### 
-
+    
   }
   return(list(failingPrograms, passingPrograms))
 }
@@ -1652,7 +1652,7 @@ analyzeSimulation <- function(
   geFailing <- geFailing %>% mutate(
     `Distance to nearest alternative` = as.numeric(`Distance to nearest alternative`)
   )
-
+  
   #### End #### 
   
   #### Program totals #### 
@@ -2123,7 +2123,7 @@ agg4 <- aggregate(
   `inGE`==1, 
   `Fail LEP` == "Fail LEP"
 )
-  
+
 #### End #### 
 
 ###########################################
@@ -2231,5 +2231,4 @@ weighted.mean(
 )
 
 #### End #### 
-
 
